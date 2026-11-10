@@ -1,0 +1,16 @@
+
+== perf-final.log — catpm 0.5.5 (parallel prefetch + batch sha) vs baselines  2026-11-10 15:27:23Z
+method: median-of-N wall clock (date +%s%N); fresh mktemp project per cold sample
+
+== [1] catpm cold install, 2-pkg closure (add mathx)
+  v0.5.5 local dir source                    median   158 ms (n=7)
+  v0.5.5 HTTPS raw source                    median   301 ms (n=5)
+  v0.5.4 local (baseline)                    median   115 ms (n=7)
+
+== [2] catpm 3-add 6-pkg closure, local source
+  v0.5.5                                     median   505 ms (n=7)
+  v0.5.4 (baseline)                          median   401 ms (n=7)
+
+== [3] reference: apt / cargo (run manually; see docs/perf.md for recorded numbers)
+
+== done  2026-11-10 15:27:34Z

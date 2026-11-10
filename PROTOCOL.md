@@ -14,7 +14,7 @@ catpm 的包生态由四层协议构成。每层只依赖下一层，可以单�
 └────────────────────────────────────────────┘
 ```
 
-所有 JSON 字段名、文件名、哈希算法均为本规范的固定部分。实现参考：`catpm/src2/`（CatBase 写的参考实现，当前编译产物 `catpm/catpm54`，即 v0.5.4）。
+所有 JSON 字段名、文件名、哈希算法均为本规范的固定部分。实现参考：`catpm/src2/`（CatBase 写的参考实现，当前编译产物 `catpm/catpm55`，即 v0.5.5）。
 
 ---
 
@@ -303,6 +303,30 @@ catpm 自身的版本演进遵守固定规则：
 
 发布顺序（每次相同）：源码定稿 → 全量单测（v0.5.2 起为 62 断言） → 全新编译 → 生成并核对 diff → `catpm pack` → `catpm publish` → git push 两仓库 → raw 直链 200 验证 → self-update 链路实测。
 
+### 4.6a 仓库规范（v0.5.5 起长期生效）
+
+**commit 规范——说明一律不进 commit message**：
+
+- commit message 一律**空白**（`git commit --allow-empty-message`）或至多一个极短词（如 `0.5.5`）；**不写正文、不写长文、不写改动说明**。
+- 一切说明进文档：改动动机、设计、实测数据写在 `README.md`、`PROTOCOL.md` 或 `docs/` 下对应文档，commit 只做指针。
+- 理由：本仓库的真相源是文档 + 落盘日志 + diff 文件；commit message 是易失性二手信息，双写必然漂移。
+
+**文档规范——README 多写、docs/ 补齐**：
+
+- `README.md` 承担入口职责：安装（curl | sh / 手动）、快速上手、全部命令、配置（package.where / 环境变量）、缓存与 self-update、发版协议、性能说明。
+- `docs/` 下按专题补齐：`docs/perf.md`（性能实测方法与数据）、`docs/release.md`（发版步骤 checklist）、`docs/registry.md`（源与发布操作手册）。后续改动说明**优先落文档**再提交代码。
+
+### 4.6b 发版产物规范（v0.5.5 起长期生效）
+
+**registry 只保留最新版本的完整文件**：
+
+- 每次发新版时，`catpm-registry` 里**每个包目录只保留最新版本的 `.cpkg`**；老版本产物文件（旧 `.cpkg`、index.json 中旧版本条目）一律删除，index.json 同步收敛到只含最新版条目。
+- **老版本不丢**：老版本的一切内容都在 catpm-registry 的 **git 历史**中——发版删除旧产物的那次 commit 之前的树里，旧 `.cpkg` 与旧 index.json 完整可找回（`git checkout <commit> -- <path>` / `git show <commit>:<path>`）；重要老版本可另打 tag（如 `v0.5.4-last`）便于直接定位。
+- **发布产物 = 完整整包**：最新节点（tag / release 附件）与 diff 文件只包含对应版本的完整内容；不做「只含增量的发布产物」。
+- **版本替换一律全量**：self-update 与安装脚本下载、替换的都是完整新版文件集（整包 .cpkg → 整个二进制），不做增量补丁、不做字节级差异应用。
+- **如实记录的影响（v0.5.5 实测）**：registry 删除老版本后，`catpm add <pkg>@<旧版>` 与 `self-update @<旧版>` 对该旧版本**不可再安装**（解析器在源索引中找不到该版本即报错 exit 1，行为与「版本从未存在过」一致）；锁文件中已装的老版本不受影响（本地 deps/ 与缓存仍是完整整包）。老版本需求从 git 历史找回：检出旧 commit 取回 `.cpkg` 后放入本地源或缓存即可安装。self-update 全量替换链路在删除旧版后实测仍通过（0.5.4→0.5.5）。
+
+
 ### 4.7 索引缓存与 update/upgrade 语义划分（v0.5.4）
 
 对标 `apt update`（只刷新索引）与 `apt upgrade`（应用更新），v0.5.4 起两个动词分工固定：
@@ -334,6 +358,23 @@ catpm 自身的版本演进遵守固定规则：
 
 **pip 式新版本提示**：`catpm --version` 与 `catpm update` 尾部用 live 索引查 catpm 包最新版，`newest > current` 时打印一行 `notice: new version available: current X, available Y — run 'catpm self-update'`（不改变退出码，不阻塞）；否则静默。
 
+### 4.8 中断恢复（v0.5.5）：任意时刻被杀，重跑即续
+
+协议目标：**PM 进程在任意写入/下载/解包时刻被 SIGKILL / SIGINT / 断网打断，磁盘上不出现半写状态；重跑同一命令自动发现并清理残留后继续，最终结果与一气呵成一致**。
+
+**四层防护（各写路径的强制形态）**：
+
+| # | 规则 | 适用写路径 |
+|---|---|---|
+| 1 | **原子写**：状态文件一律写 `<path>.catpm-tmp` 再 `mv -f` 同目录改名（rename(2) 原子）；任何时刻被杀，`<path>` 只可能是旧全文或新全文 | catpm.json、catpm.lock、索引缓存每源 json 与 meta.json |
+| 2 | **暂存解包**：tar 一律先解进 `deps/.stage-<name>/`，校验 `index.catc` 存在后才删旧 `deps/<name>/` 并 `mv` 换入；`deps/` 内以 `.` 开头的目录对 `list` / prune / fix 均不可见 | install/add 的解包、self-update 的候选暂存（`.catpm-cache/self-stage/`） |
+| 3 | **缓存自愈**：下载缓存命中必须先过 sha256 校验；不符（截断/损坏）→ 删除缓存 → 从源整体重拉一次 → 复验；仍不符 → exit 1（篡改语义不变） | `.catpm-cache/<pkg>/<pkg>-<ver>.cpkg`（安装路径与 self-update 路径同款） |
+| 4 | **读侧防护**：读 manifest / lock / 索引缓存前校验——json 类必须以 `{` 开头且解析后非空（CatBase `json_loads` 对截断串静默返回空 dict，故必须显式查）；lock 校验 v2 头与行格式；不符 → 明确报错 exit 1，绝不带着坏状态继续 | read_manifest、read_lock、索引缓存读取 |
+
+**残留形态与清扫**：上述机制下，被中断的进程最多留下——`.catpm-tmp` 孤儿、`deps/.stage-<name>/`、`.catpm-cache/self-stage/`、`<bindir>/catpm.new`、截断的缓存 .cpkg。重跑原命令即自愈（各命令入口先清自己的残留）；另有显式 `catpm fix` 一轮扫六类 + 报告 `deps/` 中无 lock 条目的孤儿目录（只报告不擅删）。
+
+**已排除的方案（如实记录）**：不做 HTTP Range 字节级断点续传——恢复采用「检测 → 清理 → 整体重做」；包体积小（KB–百 KB 级），重拉代价可忽略，而 Range 续传需处理源端文件已更换时半截旧文件的一致性校验，复杂度配不上收益。另注：SIGKILL PM 后其 exec 派生的 curl/sh 孤儿子进程不被联动杀死，常会把下载补写完整——下次运行命中合法缓存直接用，视为无害。
+
 ---
 
 ## 命令对照（pip / npm / catpm）
@@ -352,6 +393,7 @@ catpm 自身的版本演进遵守固定规则：
 | 只生成锁 | — | `npm i --package-lock-only` | `catpm lock` |
 | 列出已装 | `pip list` | `npm ls` | `catpm list` |
 | 移除 | `pip uninstall pkg` | `npm uninstall pkg` | `catpm remove pkg`（自动清孤儿） |
+| 修复中断残留 | — | — | `catpm fix`（v0.5.5，§4.8；重跑原命令亦自动自愈） |
 | 打包 | `python -m build` | `npm pack` | `catpm pack` |
 | 发布 | `twine upload` | `npm publish` | `catpm publish <dir>`（本地源） |
 | 固定源 | `-i https://pypi.org/simple` | `--registry` | `package.where`（`CATPM_REGISTRY` 为单源兼容） |

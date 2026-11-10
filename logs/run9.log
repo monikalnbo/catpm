@@ -1,0 +1,146 @@
+
+==================================================
+== RUN LOG v9 — interrupt resilience (kill -9 / SIGINT / network cut) + recovery  2026-11-10 15:31:54Z
+==================================================
+scratch dir: /tmp/tmp.E7mOtNFvRt
+slowserve up (200)
+
+==================================================
+== [0/9] stage a 300MB-payload package (bigx) for the unpack-kill test
+==================================================
+catpm: packed bigx@1.0.0 -> dist/bigx-1.0.0.cpkg
+  size: 305577 bytes   sha256: 3327f64f877fd70b046db37270864b82b2225831a3c000847c8a1213414a7103
+catpm: published bigx@1.0.0
+
+
+==================================================
+== [1/9] fix: one pass sweeps six residue classes
+==================================================
+catpm: fix — scanning for interrupted-run residues
+  swept orphaned temp: catpm.lock.catpm-tmp
+  swept orphaned temp: .catpm-cache/index-cache/meta.json.catpm-tmp
+  swept orphaned temp: .catpm-cache/index-cache/abc123.json.catpm-tmp
+  swept interrupted unpack: deps/.stage-bigx
+catpm: swept interrupted self-update residue: /tmp/tmp.E7mOtNFvRt/f1/bin/catpm.new
+catpm: swept interrupted self-update residue: .catpm-cache/self-stage
+  purged corrupt cached package (sha256 mismatch): .catpm-cache/fmtx/fmtx-0.1.0.cpkg
+catpm: fix complete (7 item(s) repaired)
+fix exit=0
+-- leftovers (expect none):
+  fmtx cache entries left: 0
+
+
+==================================================
+== [2/9] truncated manifest (mid-write kill) -> every mutating command refuses
+==================================================
+  install -> exit=1
+  upgrade -> exit=1
+  add fmtx -> exit=1
+  remove mathx -> exit=1
+  restore it from version control, or edit it back into shape
+
+
+==================================================
+== [3/9] truncated cached .cpkg self-heals on next use
+==================================================
+repo/scripts/e2e_v9.sh: line 178: .catpm-cache/mathx/mathx-0.4.0.cpkg: No such file or directory
+  planted truncated cache: 300 bytes
+catpm: cached copy fails sha256 (interrupted download?) — re-fetching
+  installed mathx@0.4.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+add exit=0
+
+
+==================================================
+== [4/9] kill -9 during download -> rerun recovers (v0.5.4 baseline needed two runs)
+==================================================
+slowserve already up
+  cache after kill: 685 bytes (truncated)
+-- rerun same command:
+  installed mathx@0.4.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  rerun exit=0
+
+
+==================================================
+== [5/9] SIGINT (Ctrl+C analog) during download -> rerun recovers
+==================================================
+slowserve already up
+-- rerun same command:
+  installed mathx@0.4.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  rerun exit=0
+
+
+==================================================
+== [6/9] kill -9 during unpack (300MB) -> stage dir protects deps/; rerun completes
+==================================================
+  killed at stage 42MB
+  deps/bigx NOT promoted (stage isolation held)
+-- rerun same command:
+  installed bigx@1.0.0 (sha256 ok) -> deps/bigx/index.catc
+catpm: wrote catpm.lock
+  rerun exit=0
+  no stage residue
+
+
+==================================================
+== [7/9] network cut mid-download (iptables DROP) -> rerun recovers
+==================================================
+slowserve already up
+  (network to :8123 cut)
+  add while offline -> exit=0 (expected nonzero)
+  (network restored)
+-- rerun same command online:
+  installed mathx@0.4.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  rerun exit=0
+
+
+==================================================
+== [8/9] randomized kill stress: 25x add + 20x update, zero integrity violations
+==================================================
+slowserve already up
+  add stress: 8/25 killed mid-run, violations: 0
+  update stress: 11/20 killed mid-run, violations: 0
+-- rerun to completion, then A/B vs one-shot clean room:
+  rerun exit=0
+  final state valid
+  MATCH  catpm.lock
+  MATCH  deps/fmtx/index.catc
+  MATCH  deps/fmtx/catpm.json
+  MATCH  deps/stringx/index.catc
+
+
+==================================================
+== [9/9] offline: update fails gracefully (cache kept); STALE index + pkg cache still install
+==================================================
+slowserve already up
+Terminated
+  (throttled server stopped = source offline)
+  ERR  http://127.0.0.1:8123/registry4 unreachable (keeping last good copy: 13 entries)
+catpm: PARTIAL FAILURE: 1 source(s) could not be refreshed; cached data for them (if any) is retained
+  update exit=1
+  cache files kept: 2
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  stringx installed offline (STALE index + package cache)
+
+== live HTTPS: registry raw checks + self-update 0.5.4 -> 0.5.5 ==
+200  index.json
+404  catpm/catpm-0.5.5.cpkg
+step0: catpm 0.5.4 (for CatBase 0.1.8)
+catpm: target version  0.5.4
+step1: catpm 0.5.4 (for CatBase 0.1.8)
+no .new residue
+-- fresh 0.5.5 over HTTPS: update (cache) then add prebuilt hellox:
+catpm: index cache updated: 1 ok, 0 failed, 15 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+hello 1.0.0
+hellox says hi
+run exit=0
+
+
+==================================================
+== DONE run9  2026-11-10 15:32:31Z
+==================================================

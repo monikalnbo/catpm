@@ -1,8 +1,9 @@
 # catpm — 用 CatBase 写的依赖包管理器（pip/npm 式语义 + apt 式源清单 + 四层协议）
 
-catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、预编译二进制包（v0.5.3）、**apt update 式索引缓存 + pip 式新版本提示（v0.5.4）**，一应俱全——全部用一门新语言实现。
+catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、预编译二进制包（v0.5.3）、apt update 式索引缓存 + pip 式新版本提示（v0.5.4）、**中断恢复：任意时刻被杀重跑即续 + 并行下载（v0.5.5）**，一应俱全——全部用一门新语言实现。
 
-> 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0）。
+> 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0、仓库与发版产物规范 §4.6a/§4.6b）。
+> 专题手册：**[docs/perf.md](docs/perf.md)**（性能实测：catpm vs apt vs cargo）、**[docs/release.md](docs/release.md)**（发版 checklist）、**[docs/registry.md](docs/registry.md)**（源与发布操作手册）。
 > **v0.4 起仓库分离**：包集中在专用仓库 **[monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**；本仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。
 
 ---
@@ -12,8 +13,8 @@ catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Z
 | | |
 |---|---|
 | 语言 | CatBase v0.1.8（本机验证包；`catcc 0.1.8` + Zig 0.14.1 后端） |
-| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.5.4）+ `util.catc` + `ver.catc`（版本引擎） |
-| 二进制 | `catpm/catpm54`（v0.5.4，302,864 B）；`catpm53`/`catpm52`/`catpm5`/`catpm4` 为旧版，MIT 许可 |
+| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.5.5）+ `util.catc` + `ver.catc`（版本引擎） |
+| 二进制 | `catpm/catpm55`（v0.5.5，324,976 B）；`catpm54`/`catpm53`/`catpm52` 为旧版，MIT 许可 |
 | 源定义 | `package.where`（apt sources.list 式多源清单，默认指向 catpm-registry 仓库） |
 | 源码形态 | 源码内置（vendoring）：包以源码安装进 `deps/`，catcc 单入口编译时传递展开 import |
 | 自更新 | `catpm self-update`（对标 `apt install apt`）——catpm 本体也是 registry 里的一个包 |
@@ -30,6 +31,8 @@ CATPM_REGISTRY=<raw-url> \
 catcc main.cat -o app && ./app   引用直接+传递依赖，运行正确
 ```
 
+**性能（本机实测，方法与样本数见 [docs/perf.md](docs/perf.md)）**：`catpm update` 106 ms vs `apt-get update` 1913 ms；冷装 2 包闭包 HTTPS 301 ms vs `apt install` 7134 ms vs `cargo build`（2 依赖）10,990 ms；`catpm list` 5 ms vs `apt list --installed` 531 ms。v0.5.5 起 URL 源下载并行预取 + 批量哈希（HTTPS 冷装较 v0.5.4 快 30–40 ms；本地目录源因中断恢复的原子写/暂存解包机制慢 30–40 ms——鲁棒性换时延的既定取舍，详见 docs/perf.md 的交错 A/B 数据）。
+
 ## 2. 安装
 
 ### 一键安装（sh / bash / zsh）
@@ -40,7 +43,7 @@ catcc main.cat -o app && ./app   引用直接+传递依赖，运行正确
 curl -fsSL https://raw.githubusercontent.com/monikalnbo/catpm/main/install.sh | sh
 ```
 
-`install.sh` 是纯 POSIX sh（同一份脚本在 sh / bash / zsh 下真实跑过，见 `logs/run4.log` [5/6]）：下载 `catpm54` 二进制与 `package.where`（默认源：catpm-registry 仓库）放到 `~/.local/bin`，`package.where` 与二进制同目录——catpm 找源时优先读二进制旁边的清单，开箱即用。装完即可 `catpm self-update` 保持新版（v0.5 起支持）。
+`install.sh` 是纯 POSIX sh（同一份脚本在 sh / bash / zsh 下真实跑过，见 `logs/run4.log` [5/6]）：下载 `catpm55` 二进制与 `package.where`（默认源：catpm-registry 仓库）放到 `~/.local/bin`，`package.where` 与二进制同目录——catpm 找源时优先读二进制旁边的清单，开箱即用。装完即可 `catpm self-update` 保持新版（v0.5 起支持）。
 
 ### fish
 
@@ -61,17 +64,17 @@ export PATH="$HOME/.local/bin:$PATH"
 fish_add_path ~/.local/bin
 ```
 
-然后 `catpm --version` 验证（应输出 `catpm 0.5.4 (for CatBase 0.1.8)`；若源上有更新版本，会像 pip 一样追加一行提示）。
+然后 `catpm --version` 验证（应输出 `catpm 0.5.5 (for CatBase 0.1.8)`；若源上有更新版本，会像 pip 一样追加一行提示）。
 
 ### 从源码构建
 
 需要 CatBase v0.1.8（`bin/catcc`、`conf/`、`runtime/`）：
 
 ```bash
-cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm54  # ~13 s
+cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm55  # ~13 s
 ```
 
-不想构建时直接用仓库里已编译的 `catpm/catpm54`（x86_64 Linux ELF）。
+不想构建时直接用仓库里已编译的 `catpm/catpm55`（x86_64 Linux ELF）。
 
 > 说明：安装脚本只是「下载 + 放对位置」，catpm 自身运行还依赖系统 `tar`/`sha256sum`/`curl`（包管理操作用）；`catpm --version`、`catpm sources` 等纯命令无这些也能跑。
 
@@ -97,6 +100,7 @@ catpm outdated                    # current vs newest，标 -> upgradable（v0.4
 catpm lock                        # 只解析 + 写锁，不装（同 npm i --package-lock-only）
 catpm list                        # 列出已装（同 pip list / npm ls）
 catpm remove mathx                # 移除 + 清孤儿传递依赖
+catpm fix                         # 清扫中断残留（v0.5.5；重跑命令亦自动自愈）
 catpm pack                        # 打包当前目录为 dist/<name>-<ver>.cpkg
 catpm publish registry/           # 发布到本地源（自动维护 index.json）
 catpm sources                     # 列出源清单（prio/类型/钉定/可达性）
@@ -151,6 +155,7 @@ def main() {
 | 只生成锁 | — | `npm i --package-lock-only` | `catpm lock` |
 | 列出已装 | `pip list` | `npm ls` | `catpm list` |
 | 移除 | `pip uninstall pkg` | `npm uninstall pkg` | `catpm remove pkg` |
+| 修复中断残留 | — | — | `catpm fix`（v0.5.5；重跑命令亦自动自愈） |
 | 打包 | `python -m build` | `npm pack` | `catpm pack` |
 | 发布 | `twine upload` | `npm publish` | `catpm publish <dir>`（远程发布 = git push，见 scripts/publish-remote.md） |
 | 指定源 | `-i <url>` | `--registry` | `package.where`（兼容 `CATPM_REGISTRY`） |
@@ -183,7 +188,7 @@ def main() {
 | **timex** | 0.1.0 | **v0.4 新增**：真实时间（`iso8601()`/`epoch()`/`stamp()`/`days_between()`，经 `exec(date)`） | stringx ^0.3.0 |
 | **randx** | 0.1.0 | **v0.4 新增**：种子化确定性 PRNG（`seed`/`between`/`below`/`pick`/`die6`；LCG + 乘法混叠，无位运算可用故纯 `+ * %` 实现） | timex ^0.1.0 |
 | **hellox** | 1.0.0 | **v0.5.3 新增**：首个预编译参考包（含 `bin/hellox` linux-x86_64 ELF） | — |
-| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 / 0.5.3 / 0.5.4 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
+| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 / 0.5.3 / 0.5.4 / 0.5.5 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
 
 本仓库（catpm）只保留 PM 本体：源码、二进制、`package.where`、README/PROTOCOL、安装脚本、日志。**v0.3 及以前放在本仓库的 `registry/`、`registry3/`、`registry-mirror/` 已整体删除（非归档）**——包体与索引全部迁移到 catpm-registry，raw 可达性实测 8/8 个 .cpkg + index.json 全 200（`logs/run4.log` [6/6]）。
 
@@ -225,6 +230,8 @@ catpm self-update @0.4.0     # 装指定版本（可降级；说明符同 add �
 2. **先 diff 后发版**：每个新版本发布前，先对「上一版 ↔ 新版」源码做真实 diff（`diff -ruN <上一版快照> <新版快照>`，或 git 两个标签间 diff），diff 完整落盘到仓库 **`diffs/`** 目录，文件名含两端版本号：`diffs/v<旧>..v<新>.diff`（如 `diffs/v0.5.0..v0.5.1.diff`）。核对 diff 无未预期改动后才发版，diff 文件随发版一起提交推送。
 3. **补历史 diff**：本规则生效前的相邻版本对同样补齐（`diffs/` 里现有 `v0.5.0..v0.5.1.diff`，其中 0.5.1 相对 0.5.0 仅版本号一行，如实反映）。首个按新规则发布的版本是 **v0.5.2**（`diffs/v0.5.1..v0.5.2.diff`，上一版快照取自 0.5.1 .cpkg 内源码——发布包是唯一可信快照源）。
 4. **registry 一次到位**：0.5.2 发布过程中实测到——registry 推送两次（中间版 cpkg + 最终版 cpkg）会让 raw CDN 在几分钟窗口内新 cpkg 配旧 index.json，self-update 的 sha256 门如实拦截（这正是它存在的意义）。规则：**源码定稿 → 打包 → 推送，只推一次**；误推中间版后立即补推最终版并等 CDN 一致再做 self-update 实测。
+5. **commit 极短、文档详尽（v0.5.5 起长期生效，规范本体见 PROTOCOL.md §4.6a）**：commit message 一律**空白**（`git commit --allow-empty-message`）或至多一个极短词；一切说明进文档（README / PROTOCOL / docs/），commit 只做指针。理由：本仓库真相源是文档 + 落盘日志 + diff 文件，commit message 是易失性二手信息，双写必然漂移。
+6. **registry 只留最新版（v0.5.5 起长期生效，规范本体见 PROTOCOL.md §4.6b、操作手册见 [docs/release.md](docs/release.md)）**：每个包目录只保留最新版本的 `.cpkg`，index.json 同步收敛；老版本不丢——完整内容都在 catpm-registry 的 git 历史（需要时打 tag 定位），`git show <commit>:<path>` 可找回。发布产物与 self-update / 安装脚本下载的都是**完整整包**，全量替换，不做增量。删除老版本的影响（`add pkg@旧版` 如实 exit 1、已装项目零影响、找回方法）实测记录见 docs/release.md。
 
 ## 5d. 预编译二进制包（v0.5.3）
 
@@ -287,12 +294,53 @@ catpm: notice: new version available: current 0.5.4, available 0.5.5 — run 'ca
 
 当前版 ≥ 源内最新时静默（不制造噪音）；提示不阻塞任何命令，退出码不变。自升级仍走 `catpm self-update`（下载 → sha256 门 → 冒烟 → 原子 mv，链路见 §5b）——「检测到新版本 → 一条命令自升级 → 新版可用」全链路实测见 `logs/run8.log`。
 
+## 5f. 中断恢复（v0.5.5）：进程任意时刻被杀，重跑即续
+
+对标的目标很朴素：**下载器进程在任意时刻被 kill -9 / Ctrl+C / 断网打断，磁盘上不留半写状态；重跑同一命令能自动清掉残留并继续，最终结果与一气呵成完全一致**。全部实测见 `logs/run9.log`（含随机时刻强杀压力测试）。
+
+**四层防护**：
+
+| 层 | 机制 | 防的是什么 |
+|---|---|---|
+| 写入原子化 | 所有状态文件（manifest / lock / 索引缓存 meta 与每源 json）一律「写 `<path>.catpm-tmp` → `mv -f` 同目录改名」（rename(2) 内核原子） | 写文件中途被杀留下半写的 catpm.lock / meta.json |
+| 解包暂存化 | tar 先解进 `deps/.stage-<name>/`，验完 `index.catc` 才 `rm` 旧目录 + `mv` 换入 | 解 300MB 包解到一半被杀，deps/ 里出现半个包 |
+| 缓存自愈 | 下载缓存命中时**先验 sha256**，不符（上次下载被截断）→ 删缓存 → 从源整体重拉一次 → 再不符才报错退出 | 半个 .cpkg 躺在缓存里让后续安装全挂 |
+| 读侧防护 | 读 manifest/lock/索引缓存时校验合法性（json_loads 会把截断串静默解析成空 dict，故显式查 `{` 开头 + 零键） | 中断残留的坏文件被当真解析出错误结果 |
+
+**`catpm fix` 子命令**：重跑命令本身就会清各自残留（add 见到 `.stage-` 先删再解、缓存命中先验 sha）；fix 是显式的一次性体检，一轮清六类残留——孤儿 `.catpm-tmp`（manifest/lock/meta/索引缓存旁）、`deps/.stage-*`、self-update 候选 `catpm.new` 与 `.catpm-cache/self-stage/`、按索引 sha 校验出的坏缓存 .cpkg——并报告 `deps/` 里没有 lock 条目的孤儿目录：
+
+```
+$ catpm fix
+catpm: fix — scanning for interrupted-run residues
+  swept orphaned temp: catpm.lock.catpm-tmp
+  swept interrupted unpack: deps/.stage-bigx
+catpm: swept interrupted self-update residue: /path/bin/catpm.new
+catpm: fix complete (6 item(s) repaired)
+```
+
+**实测矩阵**（`logs/run9.log`，节流 HTTP 源 48KB/s 制造秒级可击中窗口 + 300MB 负载包制造解包窗口）：
+
+| 场景 | 做法 | 结果 |
+|---|---|---|
+| 下载中 kill -9 | 轮询击中下载窗口强杀（含同步杀 curl） | 截断缓存落盘；重跑 1 次即自愈装成（v0.5.4 基线同场景首跑失败、需两次） |
+| 下载中 SIGINT | kill -INT | 同上自愈 |
+| 解包中 kill -9 | 300MB 包解到 41–46MB 处强杀 | `.stage-` 隔离生效，deps/ 零污染；重跑清 stage 重解完整 |
+| 断网中途 | iptables DROP 源端口 | 离线时命令如实失败；恢复后重跑自愈 |
+| 随机强杀 ×45 | 25×add + 20×update，随机 20–300ms 时延 kill -9 | **0 次状态违规**（lock/索引缓存/_deps 每轮校验合法）；重跑完成后与一气呵成干净房**逐字节一致** |
+| 完全离线 | 源下线 + TTL 过期 | update 优雅失败保缓存（exit 1）；STALE 索引 + 包缓存仍可装 |
+
+**如实记录的边界**：
+- **不做字节级断点续传**（HTTP Range 续传）：恢复策略是「检测残留 → 清理 → 整体重做」。包都是小文件（最大 300KB 级），重拉一次的代价可忽略；Range 续传要处理源端不一致（服务器上 cpkg 已换新而本地有半截旧文件）的校验难题，收益配不上复杂度。
+- **kill -9 后孤儿 curl 会把下载补完**：catpm 被 SIGKILL 时其 exec() 派生的 curl/sh 子进程不被联动杀死，经常把下载**完整写完**（文件合法、sha 正确）——这不是 bug：下次运行命中合法缓存直接用。要实测「真截断」必须连 curl 一起杀（run9 脚本里就是这么做的）。
+- TTL 时效整秒比较、update 对坏 JSON 索引保留旧缓存等 v0.5.4 边界不变。
+
 ## 6. 仓库布局
 
 ```
-catpm/src2/          PM 源码（catpm.cat v0.5.4 + ver.catc + util.catc + test_ver.cat 62 断言）
-catpm/catpm54        编译好的 x86_64 Linux 二进制（v0.5.4，302,864 B；catpm53/catpm52/catpm5/catpm4 为旧版）
-diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3、v0.5.3..v0.5.4；发版规则见 §5c）
+catpm/src2/          PM 源码（catpm.cat v0.5.5 + ver.catc + util.catc + test_ver.cat 62 断言）
+catpm/catpm55        编译好的 x86_64 Linux 二进制（v0.5.5，324,976 B；catpm54/catpm53/catpm52 为旧版）
+diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3、v0.5.3..v0.5.4、v0.5.4..v0.5.5；发版规则见 §5c）
+docs/                专题手册：perf.md（性能实测）/ release.md（发版 checklist）/ registry.md（源操作手册）
 catpm/package.where  默认源清单（指向 catpm-registry 仓库 GitHub raw）
 install.sh           POSIX sh 安装器（sh/bash/zsh 通用，curl | sh 一键装）
 install.fish         fish 原生安装器（curl | source）
@@ -312,6 +360,10 @@ logs/build7.log      v0.5.3 构建记录（62 断言 + catpm53 编译 + hellox �
 logs/run7.log        v0.5.3 预编译包八段实测：安装链路/篡改拦截/坏格式拒绝/错架构拒绝/新旧互兼容/源码回归/self-update+HTTPS
 logs/build8.log      v0.5.4 构建记录（62 断言 + catpm54 编译 + 打包发布）
 logs/run8.log        v0.5.4 apt update 语义实测：索引缓存刷新/部分失败保留/TTL/STALE 回退/upgrade 回归/pip 提示/自升级全链
+logs/build9.log      v0.5.5 构建记录（62 断言 + catpm55 编译）
+logs/run9.log        v0.5.5 中断恢复实测：kill -9/SIGINT/断网/解包中杀/随机强杀×45/A-B 一致性/离线/fix 清扫
+logs/perf-final.log  v0.5.5 性能实测（catpm vs apt vs cargo 中位数 + 优化前后对比；详见 docs/perf.md）
+reports/round10-report.md  第 10 轮报告：性能对标与优化清单、仓库/发版规范落实、registry 清理记录、diff 核对
 logs/syntax-probe.log CatBase v0.1.8 语法/标准库探针（含失败案例）
 scripts/e2e.sh       一键复现 build.log + run.log
 scripts/e2e_v2.sh    一键复现 v0.2 全生态
@@ -321,6 +373,8 @@ scripts/e2e_v5.sh    一键复现 v0.5 自更新全场景（build5.log + selfupd
 scripts/e2e_v6.sh    一键复现 v0.5.2 打磨发版（build6.log + run6.log）
 scripts/e2e_v7.sh    一键复现 v0.5.3 预编译包发版（build7.log + run7.log）
 scripts/e2e_v8.sh    一键复现 v0.5.4 索引缓存/自升级发版（build8.log + run8.log）
+scripts/e2e_v9.sh    一键复现 v0.5.5 中断恢复发版（build9.log + run9.log；自带节流 HTTP 源）
+scripts/perf_v10.sh  v0.5.5 性能基准复现（交错 A/B 对照 v0.5.4；apt/cargo 段见 docs/perf.md）
 PROTOCOL.md          四层协议规范（§4.0 package.where；§4.4 catpm-registry）
 LICENSE              MIT
 ```
@@ -349,6 +403,7 @@ LICENSE              MIT
 | 未使用的函数参数是 Zig 硬错误 | 删掉 |
 | **模块级常量不做常量折叠**：`IDX_CACHEDIR: str = CACHEDIR + "/index-cache"` 初始化时 `CACHEDIR` 还是 `""`，结果路径变成 `/index-cache`、meta 写到了文件系统根 `/meta.json`（v0.5.4 实测踩坑） | 拼接依赖其他全局的路径一律改成函数：`def idx_cachedir() -> str { return CACHEDIR + "/index-cache" }` |
 | `exec()` 返回值类型是 unknown，`int(exec(...).strip())` 直接编译错 | 先赋给显式 `str` 变量再转（同 any 经 `is not None` 收窄后 `int()` 仍报错的情况，均需 `str()` 中转） |
+| **同一函数多个循环声明同名变量**（如三处 `n: str = names[i]`）：catcc 只给其中一个生成 `var`，其余 `const`，第三个循环想赋值 → Zig 硬错误 "local variable is never mutated"（v0.5.5 实测踩坑） | 每个循环用不同变量名（如 `cname`） |
 
 **做不到的（如实记录，不虚构）**：f-string/字符串含 `\n` 转义（issue #5，两代版本同）、struct dict 字段下标赋值（issue #6）、`float("3.5")`、str 重复 `*`、内置加密哈希（故用 `sha256sum`）、一次编译多个入口源文件（故 vendoring）。
 
@@ -363,6 +418,7 @@ bash scripts/e2e_v5.sh     # v0.5 自更新全场景 → logs/build5.log + selfu
 bash scripts/e2e_v6.sh     # v0.5.2 打磨发版 → logs/build6.log + run6.log
 bash scripts/e2e_v7.sh     # v0.5.3 预编译包发版 → logs/build7.log + run7.log
 bash scripts/e2e_v8.sh     # v0.5.4 索引缓存/自升级 → logs/build8.log + run8.log
+bash scripts/e2e_v9.sh     # v0.5.5 中断恢复 → logs/build9.log + run9.log
 bash probe/run_probes.sh   # 语法探针套件 → logs/syntax-probe.log
 ```
 

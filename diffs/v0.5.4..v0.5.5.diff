@@ -1,0 +1,997 @@
+diff -ruN /tmp/snap054/x/index.catc /tmp/snap055/index.catc
+--- /tmp/snap054/x/index.catc	2026-11-10 21:30:42.000000000 +0800
++++ /tmp/snap055/index.catc	2026-11-10 23:29:02.285142456 +0800
+@@ -1,8 +1,68 @@
+ # ============================================================
+-# catpm v0.4.0 — dependency package manager for CatBase v0.1.8
++# catpm v0.5.5 — dependency package manager for CatBase v0.1.8
+ # written in CatBase, compiled by catcc to a native binary.
+ #
+-# v0.4 adds (over v0.3):
++# v0.5.5 adds crash recovery + parallel prefetch (over v0.5.4):
++# an interrupted run (Ctrl+C / kill -9 / dropped network) can no
++# longer leave the project, the cache, or the catpm binary itself
++# in a broken state, and re-running heals whatever the interruption
++# left; plus a speed path for multi-package installs:
++#   - crash-safe state writes: manifest, lock, index cache and
++#     meta.json are written to <name>.catpm-tmp then mv'd over
++#     (same-dir rename = atomic); a crash leaves the OLD intact
++#     file, never a half-written one
++#   - half-downloaded .cpkg in the cache no longer hard-fails:
++#     sha256 mismatch on a cached copy -> purge + ONE full
++#     re-download; a fresh mismatch is still a hard error
++#     (tamper semantics unchanged)
++#   - staged unpack: packages unpack into deps/.stage-<name>/
++#     first and are mv'd in after checking — a crash mid-unpack
++#     leaves the previous complete install in place
++#   - read_manifest refuses corrupt JSON instead of silently
++#     seeing "no deps" (which would empty the lock and prune
++#     deps/ — data loss)
++#   - self-update sweeps residues (catpm.new candidate, self-stage)
++#     before starting; 'catpm fix' sweeps everything explicitly
++#   - parallel prefetch: after resolution all needed .cpkg files
++#     are downloaded by ONE sh script whose curl jobs run
++#     concurrently (& + wait), then verified by one sha256sum
++#     invocation — N packages cost one fork round instead of 2N
++#     sequential curl+sha256sum round trips; install_one then
++#     hits a warm, pre-verified cache. URL sources only: local
++#     dir sources copy in-process (zero forks — a cp-per-package
++#     through sh measured slower than v0.5.4's plain path)
++#   - perf polish (interleaved A/B measured, see docs/perf.md):
++#     batch sha256sum + in-process digest reuse (psha memo, never
++#     persisted — tamper checking still hashes real bytes on any
++#     non-prefetched path), index-cache path memo per root,
++#     atomic_write skips when target bytes are already identical,
++#     stage-clean+unpack and remove-old+swap-in merged into single
++#     sh calls (2 forks saved per package)
++#   - known limitation (documented, not hidden): no byte-range
++#     resume; recovery is purge-and-redownload
++#
++# v0.5.4 (unchanged): apt-update-style index cache (TTL, STALE
++#   fallback, partial-failure retention), pip-style new-version
++#   notice, update/upgrade semantics split
++#
++# v0.5.3 (unchanged): prebuilt binary packages (bin/<name>,
++#   ELF/arch check, exec-bit restore)
++#
++# v0.5 (unchanged): self-update; v0.4 (unchanged): AND spec
++#   lists, lock-exact install, outdated; v0.3: package.where;
++#   v0.2: specifiers + lock + pack/publish + sha256 cache
++#
++# project layout managed:
++#   catpm.json   manifest {"name","catpm","deps":{name:spec}}
++#   catpm.lock   resolved pins (protocol layer 2)
++#   deps/<name>/index.catc   vendored package sources
++#   .catpm-cache/<name>/<name>-<ver>.cpkg   download cache
++#
++# usage: catpm <command> [args]
++#   init / add <pkg[@spec]> / install / update / upgrade /
++#   outdated / lock / list / remove <name> / fix / pack /
++#   publish <registry-dir> / sources / self-update / --version
++# ============================================================
+ #   - AND version specifier lists: pkg@'>=0.2.0,<0.3.0'
+ #     (every comma-separated constraint must hold; same syntax
+ #     as pip's comma list / npm's space-separated AND)
+@@ -49,7 +109,7 @@
+ import ./util.catc as util
+ import ./ver.catc as ver
+ 
+-CATPM_VERSION: str = "0.5.4"
++CATPM_VERSION: str = "0.5.5"
+ 
+ import ./util.catc as util
+ import ./ver.catc as ver
+@@ -59,6 +119,7 @@
+ DEPSDIR: str = "deps"
+ CACHEDIR: str = ".catpm-cache"
+ WHEREFILE: str = "package.where"
++IDXPATH_MEMO: dict[str, any] = {}   # root -> index-cache path (avoids re-hashing the root string)
+ 
+ def main(args: list[str]) {
+     if len(args) < 1 {
+@@ -102,6 +163,8 @@
+         cmd_publish(args[1])
+     } else if cmd == "sources" {
+         cmd_sources()
++    } else if cmd == "fix" {
++        cmd_fix()
+     } else if cmd == "self-update" {
+         if len(args) < 2 {
+             cmd_self_update("latest")
+@@ -132,6 +195,7 @@
+     print("  pack                   pack cwd package -> dist/<name>-<ver>.cpkg")
+     print("  publish <registry-dir> publish dist/*.cpkg into a local registry")
+     print("  sources                show configured sources (" + WHEREFILE + ")")
++    print("  fix                    detect + repair residues of interrupted runs (v0.5.5)")
+     print("  self-update [@spec]    update the catpm binary itself (like 'apt install apt')")
+     print("  --version              show catpm version")
+     print("sources: " + WHEREFILE + " (./ or next to the catpm binary; or CATPM_WHERE=<path>)")
+@@ -597,8 +661,19 @@
+ }
+ 
+ def idx_cache_path(root: str) -> str {
+-    # stable per-root filename: sha256 of the root string, first 16 hex chars
+-    return idx_cachedir() + "/" + sha256_of_string(root)[0:16] + ".json"
++    # stable per-root filename: sha256 of the root string, first 16 hex chars.
++    # memoized per root string (same root is asked for 2-3x per run; each miss
++    # costs a printf|sha256sum fork round-trip)
++    memo: any = IDXPATH_MEMO.get(root, None)
++    if memo is not None {
++        m: str = str(memo)
++        if m != "" {
++            return m
++        }
++    }
++    p: str = idx_cachedir() + "/" + sha256_of_string(root)[0:16] + ".json"
++    IDXPATH_MEMO.put(root, p)
++    return p
+ }
+ 
+ def sha256_of_string(s: str) -> str {
+@@ -611,6 +686,35 @@
+     return out[0:sp]
+ }
+ 
++# ---------- crash-safe file writes (v0.5.5) ----------
++# File.write() is an unbuffered writeAll: a kill -9 / Ctrl+C mid-write leaves
++# a truncated file behind, and json_loads() silently parses garbage into {}
++# (probed: truncated/garbage/empty all yield keys()==0, no error). So every
++# state file (manifest, lock, index cache, meta.json) is written through this
++# helper: full body to <path>.catpm-tmp first, then mv -f (same-directory
++# rename(2), atomic in the kernel) over the real name. A crash at ANY point
++# leaves either the old intact file or the untouched new name — never a
++# half-written one. Orphaned .catpm-tmp files are swept by 'catpm fix'.
++def atomic_write(path: str, body: str) {
++    # skip the tmp+mv round when the target already holds exactly these bytes
++    # (idempotent re-runs: re-add same pkg, repeated index refreshes). Saves a
++    # fork+rename per unchanged file; crash-safety of the write itself is
++    # unchanged because we don't write at all.
++    if file_exists(path) {
++        rf: File = file(path, "r")
++        cur: str = rf.read()
++        rf.close()
++        if cur == body {
++            return
++        }
++    }
++    tmp: str = path + ".catpm-tmp"
++    f: File = file(tmp, "w")
++    f.write(body)
++    f.close()
++    sh_die("mv -f '" + tmp + "' '" + path + "'", "atomically replace " + path)
++}
++
+ # count package entries (name,version) pairs in an index
+ def idx_entry_count(idx: dict[str, any]) -> int {
+     n: int = 0
+@@ -644,10 +748,7 @@
+ }
+ 
+ def write_idx_cache_meta(m: dict[str, any]) {
+-    f: File = file(idx_cachedir() + "/meta.json", "w")
+-    f.write(json_dumps(m))
+-    f.write("\n")
+-    f.close()
++    atomic_write(idx_cachedir() + "/meta.json", json_dumps(m) + "\n")
+ }
+ 
+ # load a root's cached index; {} if absent/corrupt (caller refetches)
+@@ -745,10 +846,7 @@
+         }
+         b: str = body.strip()
+         idx: dict[str, any] = json_loads(b)
+-        f2: File = file(idx_cache_path(r), "w")
+-        f2.write(b)
+-        f2.write("\n")
+-        f2.close()
++        atomic_write(idx_cache_path(r), b + "\n")
+         apply_refresh_result(r, idx, counts, fetched, now)
+         newest_self = newest_self_in(idx, newest_self)
+         okn = okn + 1
+@@ -852,10 +950,7 @@
+             # opportunistically refresh the cache for this root
+             mkdir(CACHEDIR)
+             mkdir(idx_cachedir())
+-            fw: File = file(idx_cache_path(r), "w")
+-            fw.write(b)
+-            fw.write("\n")
+-            fw.close()
++            atomic_write(idx_cache_path(r), b + "\n")
+             counts2: dict[str, any] = util.get_dict(meta, "counts")
+             fetched2: dict[str, any] = util.get_dict(meta, "fetched_at")
+             counts2.put(r, idx_entry_count(idxl))
+@@ -1067,14 +1162,32 @@
+     f: File = file(MANIFEST, "r")
+     content: str = f.read()
+     f.close()
+-    return json_loads(content)
++    # v0.5.5: json_loads() silently maps corrupt/truncated JSON to {} — if we
++    # let that through, do_install() sees "no deps", writes an EMPTY lock and
++    # prune() deletes every package in deps/ (data loss). Two guards:
++    #   a) the body must start with '{' at all
++    #   b) a parse that yields ZERO keys is corrupt — every manifest catpm
++    #      writes has name/catpm/deps, and truncation anywhere inside the
++    #      object body still parses to {} (probed on v0.1.8 json_loads)
++    c: str = content.strip()
++    if not c.startswith("{") {
++        print("catpm: " + MANIFEST + " exists but is not valid JSON (truncated by an interrupted write?)")
++        print("  catpm refuses to treat it as empty — that would prune deps/")
++        print("  restore it from version control, or edit it back into shape")
++        exit_now(1)
++    }
++    m: dict[str, any] = json_loads(c)
++    if len(m.keys()) == 0 {
++        print("catpm: " + MANIFEST + " exists but parses to an empty object (truncated mid-write?)")
++        print("  catpm refuses to treat it as empty — that would prune deps/")
++        print("  restore it from version control, or edit it back into shape")
++        exit_now(1)
++    }
++    return m
+ }
+ 
+ def write_manifest(m: dict[str, any]) {
+-    f: File = file(MANIFEST, "w")
+-    f.write(json_dumps(m))
+-    f.write("\n")
+-    f.close()
++    atomic_write(MANIFEST, json_dumps(m) + "\n")
+ }
+ 
+ def empty_manifest() -> dict[str, any] {
+@@ -1209,109 +1322,136 @@
+ # fails (missing file / download error) is skipped with a notice.
+ 
+ def install_one(st: dict[str, any], name: str, version: str) {
+-    ia: any = st.get("idxs", None)
+-    idxs: dict[str, any] = ia
+     vers: dict[str, any] = merged_versions(st, name)
+     if not vers.contains(version) {
+         print("catpm: " + name + "@" + version + " not found in any source")
+         print("  searched: " + merged_searched(st))
+         exit_now(1)
+     }
+-    rv: any = vers.get(version, None)
+-    roots_any: list[str] = rv
+-    rel: str = ""
+-    want_sha: str = ""
+-    gotit: bool = False
+     # cache path
+     cdir: str = CACHEDIR + "/" + name
+     mkdir(CACHEDIR)
+     mkdir(cdir)
+     cpkg: str = cdir + "/" + name + "-" + version + ".cpkg"
+-    k: int = 0
+-    while k < len(roots_any) {
+-        r: str = roots_any[k]
+-        iv: any = idxs.get(r, None)
+-        if iv is None {
+-            k = k + 1
+-            continue
+-        }
+-        idxd: dict[str, any] = iv
+-        ent: dict[str, any] = index_entry(idxd, name, version)
+-        rel = util.get_str(ent, "path", "")
+-        want_sha = util.get_str(ent, "sha256", "")
+-        if rel == "" {
+-            print("  source " + r + " has no path for " + name + "@" + version + ", trying next")
+-            k = k + 1
+-            continue
++    want_sha: str = ""
++    got: str = ""
++    if file_exists(cpkg) {
++        print("  cached " + cpkg)
++        # v0.5.5 crash-heal: a kill mid-download leaves a truncated .cpkg
++        # here. The old code hard-failed (sha256 MISMATCH, exit 1). Now the
++        # mismatch is detected, the corrupt copy is dropped and ONE full
++        # re-download is attempted; a still-mismatching fresh download is a
++        # genuinely bad source and still aborts (tamper semantics intact).
++        want: str = util.get_str(index_entry_of(st, name, version), "sha256", "")
++        # v0.5.5 speed: prefetch_all already sha256-verified this exact file
++        # in THIS process and recorded the digest under st["psha:name@ver"] —
++        # reuse it and skip the sha256sum subprocess. In-memory only: nothing
++        # on disk to forge, and any path that re-fetches clears the record
++        # and re-hashes the new bytes below.
++        pa: str = util.get_str(st, "psha:" + name + "@" + version, "")
++        if pa != "" {
++            got = pa
++        }
++        if got == "" {
++            got = sha256_of(cpkg)
++        }
++        if want != "" and got != want {
++            print("catpm: cached copy fails sha256 (interrupted download?) — re-fetching")
++            delete_file(cpkg)
++            st.put("psha:" + name + "@" + version, "")
++            want_sha = refetch_cpkg(st, name, version, cpkg)
++            if not file_exists(cpkg) {
++                print("catpm: all sources failed to provide " + name + "@" + version)
++                exit_now(1)
++            }
++            got = ""
+         }
++    } else {
++        want_sha = refetch_cpkg(st, name, version, cpkg)
+         if not file_exists(cpkg) {
+-            if kind_of(r) == "url" {
+-                url: str = r + "/" + rel
+-                print("  downloading " + name + "@" + version + " <- " + url)
+-                rc: int = http_download_soft(url, cpkg)
+-                if rc != 0 {
+-                    print("  source " + r + " failed (curl exit " + str(rc) + "), trying next")
+-                    if file_exists(cpkg) {
+-                        delete_file(cpkg)
+-                    }
+-                    k = k + 1
+-                    continue
+-                }
+-            } else {
+-                src: str = r + "/" + rel
+-                if not file_exists(src) {
+-                    print("  source " + r + " missing file " + src + ", trying next")
+-                    k = k + 1
+-                    continue
+-                }
+-                print("  copying " + name + "@" + version + " <- " + src)
+-                copy_file(src, cpkg)
+-            }
+-        } else {
+-            print("  cached " + cpkg)
++            print("catpm: all sources failed to provide " + name + "@" + version)
++            exit_now(1)
+         }
+-        gotit = True
+-        break
+     }
+-    if not gotit {
+-        print("catpm: all sources failed to provide " + name + "@" + version)
+-        exit_now(1)
++    # got == "" exactly when the bytes on disk have not been hashed yet this
++    # run (fresh download, or re-fetch after a bad cache). Otherwise the
++    # digest above already matched — hashing again would be pure fork waste.
++    if got == "" {
++        got = sha256_of(cpkg)
++    }
++    if want_sha == "" {
++        want_sha = util.get_str(index_entry_of(st, name, version), "sha256", "")
+     }
+-    got: str = sha256_of(cpkg)
+     if want_sha != "" and got != want_sha {
+         print("catpm: sha256 MISMATCH for " + cpkg)
+         print("  index:  " + want_sha)
+         print("  actual: " + got)
+         exit_now(1)
+     }
+-    # unpack into deps/<name>/  (tar.gz made by pack: index.catc + catpm.json at root)
+-    # wipe any previous install first: an upgrade must not leave stale files
++    # v0.5.5 staged unpack: extract into deps/.stage-<name>/ FIRST, check it,
++    # then swap it in (rm old + mv). A kill mid-unpack now leaves the old
++    # (complete) install in place plus one .stage-* directory that 'catpm
++    # fix' sweeps — never a half-unpacked deps/<name>/.
++    stage: str = DEPSDIR + "/.stage-" + name
+     dst: str = DEPSDIR + "/" + name
+     mkdir(DEPSDIR)
+-    if isdir(dst) {
+-        sh_die("rm -rf '" + dst + "'", "clean " + dst)
+-    }
+-    mkdir(dst)
+-    sh_die("tar -xzf '" + cpkg + "' -C '" + dst + "'", "unpack " + cpkg)
+-    if not file_exists(dst + "/index.catc") {
++    # one fork does clean-possible-old-stage + extract (v0.5.5 perf: was two)
++    mkdir(stage)
++    sh_die("rm -rf '" + stage + "'; mkdir -p '" + stage + "'; tar -xzf '" + cpkg + "' -C '" + stage + "'", "unpack " + cpkg)
++    if not file_exists(stage + "/index.catc") {
+         print("catpm: package " + name + "@" + version + " has no index.catc after unpack")
++        sh_die("rm -rf '" + stage + "'", "clean stage " + stage)
+         exit_now(1)
+     }
++    # one fork does remove-old + swap-in (both must be atomic together from
++    # the crash-safety standpoint: a kill between rm and mv leaves the old
++    # install gone but the stage intact — rerun re-extracts, still never a
++    # half package; merging them halves the fork count)
++    sh_die("rm -rf '" + dst + "'; mv '" + stage + "' '" + dst + "'", "activate " + dst)
+     print("  installed " + name + "@" + version + " (sha256 ok) -> " + dst + "/index.catc")
+-    # v0.5.3: a prebuilt binary at bin/<name> is a first-class artifact
+-    binp: str = dst + "/bin/" + name
+-    if file_exists(binp) {
+-        sh_die("chmod 0755 '" + binp + "'", "restore exec bit on " + binp)
+-        bad: str = prebuilt_check(binp)
++    binp_new: str = dst + "/bin/" + name
++    if file_exists(binp_new) {
++        sh_die("chmod 0755 '" + binp_new + "'", "restore exec bit on " + binp_new)
++        bad: str = prebuilt_check(binp_new)
+         if bad != "" {
+             print("catpm: prebuilt bin/" + name + " check FAILED: " + bad)
+             print("  (installed anyway — run it yourself to confirm)")
+         } else {
+-            arch: str = elf_arch_of(binp)
++            arch: str = elf_arch_of(binp_new)
+             plat: str = host_platform()
+-            print("  prebuilt bin/" + name + " ok (" + plat + " / " + arch + ", executable) -> " + binp)
++            print("  prebuilt bin/" + name + " ok (" + plat + " / " + arch + ", executable) -> " + binp_new)
++        }
++    }
++}
++
++# first-index entry for name@version merged across sources ({} if absent);
++# used by install_one for the sha256 of the winning copy
++def index_entry_of(st: dict[str, any], name: str, version: str) -> dict[str, any] {
++    vers: dict[str, any] = merged_versions(st, name)
++    rv: any = vers.get(version, None)
++    if rv is None {
++        return {}
++    }
++    roots_any: list[str] = rv
++    ia: any = st.get("idxs", None)
++    idxs: dict[str, any] = ia
++    k: int = 0
++    while k < len(roots_any) {
++        r: str = roots_any[k]
++        iv: any = idxs.get(r, None)
++        if iv is None {
++            k = k + 1
++            continue
++        }
++        idxd: dict[str, any] = iv
++        ent: dict[str, any] = index_entry(idxd, name, version)
++        rel: str = util.get_str(ent, "path", "")
++        if rel != "" {
++            return ent
+         }
++        k = k + 1
+     }
++    return {}
+ }
+ 
+ def copy_file(src: str, dst: str) {
+@@ -1323,25 +1463,219 @@
+     o.close()
+ }
+ 
++# v0.5.5 crash-heal helper: force (re)download of name@version into cpkg from
++# the first source that can serve it, ignoring any cache. Returns the index
++# sha256 of the fetched copy ("" = index lists no sha, or every source failed
++# — caller distinguishes via file_exists(cpkg)).
++def refetch_cpkg(st: dict[str, any], name: str, version: str, cpkg: str) -> str {
++    ia: any = st.get("idxs", None)
++    idxs: dict[str, any] = ia
++    vers: dict[str, any] = merged_versions(st, name)
++    rv: any = vers.get(version, None)
++    if rv is None {
++        return ""
++    }
++    roots_any: list[str] = rv
++    k: int = 0
++    while k < len(roots_any) {
++        r: str = roots_any[k]
++        iv: any = idxs.get(r, None)
++        if iv is None {
++            k = k + 1
++            continue
++        }
++        idxd: dict[str, any] = iv
++        ent: dict[str, any] = index_entry(idxd, name, version)
++        rel: str = util.get_str(ent, "path", "")
++        want: str = util.get_str(ent, "sha256", "")
++        if rel == "" {
++            k = k + 1
++            continue
++        }
++        if kind_of(r) == "url" {
++            url: str = r + "/" + rel
++            print("  downloading " + name + "@" + version + " <- " + url)
++            rc: int = http_download_soft(url, cpkg)
++            if rc != 0 {
++                print("  source " + r + " failed (curl exit " + str(rc) + "), trying next")
++                if file_exists(cpkg) {
++                    delete_file(cpkg)
++                }
++                k = k + 1
++                continue
++            }
++        } else {
++            src: str = r + "/" + rel
++            if not file_exists(src) {
++                print("  source " + r + " missing file " + src + ", trying next")
++                k = k + 1
++                continue
++            }
++            print("  copying " + name + "@" + version + " <- " + src)
++            copy_file(src, cpkg)
++        }
++        return want
++    }
++    return ""
++}
++
++# v0.5.5 parallel prefetch: for every name@version in `order`, make sure the
++# .cpkg is in the download cache — all downloads fan out concurrently inside
++# ONE sh script (curl ... & ; wait), then every file is verified by a single
++# sha256sum invocation. A file that fails verification is deleted on the spot
++# (install_one's existing crash-heal path then re-fetches it sequentially, so
++# behavior on a genuinely bad source is unchanged). Local dir sources are
++# plain `cp` (also concurrent). Cache hits are skipped. One fork round total.
++def prefetch_all(st: dict[str, any], order: list[str]) {
++    mkdir(CACHEDIR)
++    dl: str = ""
++    njobs: int = 0
++    todo: list[str] = []      # cpkg paths to verify afterwards
++    i: int = 0
++    while i < len(order) {
++        pair: list[str] = order[i].split("@")
++        pname: str = pair[0]
++        pver: str = pair[1]
++        cdir: str = CACHEDIR + "/" + pname
++        cpkg: str = cdir + "/" + pname + "-" + pver + ".cpkg"
++        if file_exists(cpkg) {
++            i = i + 1
++            continue
++        }
++        ent: dict[str, any] = index_entry_of(st, pname, pver)
++        rel: str = util.get_str(ent, "path", "")
++        if rel == "" {
++            i = i + 1
++            continue
++        }
++        # first root that can serve it (same pick order as refetch_cpkg)
++        vers: dict[str, any] = merged_versions(st, pname)
++        rav: any = vers.get(pver, None)
++        if rav is None {
++            i = i + 1
++            continue
++        }
++        roots_any: list[str] = rav
++        ia: any = st.get("idxs", None)
++        idxs: dict[str, any] = ia
++        k: int = 0
++        while k < len(roots_any) {
++            r: str = roots_any[k]
++            iv: any = idxs.get(r, None)
++            if iv is None {
++                k = k + 1
++                continue
++            }
++            idxd: dict[str, any] = iv
++            e2: dict[str, any] = index_entry(idxd, pname, pver)
++            rel2: str = util.get_str(e2, "path", "")
++            if rel2 == "" {
++                k = k + 1
++                continue
++            }
++            mkdir(cdir)
++            if kind_of(r) == "url" {
++                url: str = r + "/" + rel2
++                print("  prefetch " + pname + "@" + pver + " <- " + url)
++                dl = dl + "curl -sS --max-time 300 -f -L -o '" + cpkg + "' '" + url + "' || rm -f '" + cpkg + "' &\n"
++                njobs = njobs + 1
++                todo.append(cpkg)
++            } else {
++                # local source: in-process copy (zero forks — a `cp` per pkg
++                # here measured SLOWER than v0.5.4's plain sequential path on
++                # small closures; local files don't need download concurrency)
++                src: str = r + "/" + rel2
++                print("  prefetch " + pname + "@" + pver + " <- " + src)
++                copy_file(src, cpkg)
++                todo.append(cpkg)
++            }
++            k = k + 1
++            break
++        }
++        i = i + 1
++    }
++    if njobs == 0 and len(todo) == 0 {
++        return
++    }
++    if njobs > 0 {
++        sh_die(dl + "wait", "parallel prefetch")
++    }
++    # verify all fetched files against the index with ONE sha256sum call;
++    # drop anything that does not match (install_one re-fetches sequentially)
++    arg: str = ""
++    v: int = 0
++    while v < len(todo) {
++        arg = arg + " '" + todo[v] + "'"
++        v = v + 1
++    }
++    out: str = exec("sha256sum" + arg + " 2>/dev/null")
++    lines: list[str] = out.split("\n")
++    li: int = 0
++    while li < len(lines) {
++        ln: str = lines[li].strip()
++        if ln == "" {
++            li = li + 1
++            continue
++        }
++        sp: int = ln.find(" ")
++        if sp < 0 {
++            li = li + 1
++            continue
++        }
++        got: str = ln[0:sp]
++        path: str = ln[sp + 1:]
++        path = path.strip()
++        # path is like ./x/y or x/y; find which todo it is
++        ti: int = 0
++        while ti < len(todo) {
++            t: str = todo[ti]
++            if path == t or path.endswith(t) or t.endswith(path) {
++                pair2: list[str] = t.split("/")
++                fn: str = pair2[len(pair2) - 1]
++                # name-ver.cpkg -> name, ver
++                dot: int = fn.find(".cpkg")
++                stem2: str = fn[0:dot]
++                dash: int = stem2.rfind("-")
++                pn2: str = stem2[0:dash]
++                pv2: str = stem2[dash + 1:]
++                ent3: dict[str, any] = index_entry_of(st, pn2, pv2)
++                want: str = util.get_str(ent3, "sha256", "")
++                if want != "" and got != want {
++                    print("catpm: prefetch sha256 mismatch for " + t + " — dropping, will re-fetch")
++                    delete_file(t)
++                    st.put("psha:" + pn2 + "@" + pv2, "")
++                } else {
++                    # verified good: remember the digest so install_one can
++                    # skip hashing the same bytes again this run
++                    st.put("psha:" + pn2 + "@" + pv2, got)
++                }
++                break
++            }
++            ti = ti + 1
++        }
++        li = li + 1
++    }
++}
++
+ def write_lock(order: list[str], warnings: list[str]) {
+-    f: File = file(LOCKFILE, "w")
+-    f.write("# catpm lock file v2 (generated, do not edit)\n")
+-    f.write("# format: name version\n")
++    body: str = ""
++    body = body + "# catpm lock file v2 (generated, do not edit)\n"
++    body = body + "# format: name version\n"
+     i: int = 0
+     while i < len(order) {
+         pair: list[str] = order[i].split("@")
+-        f.write(pair[0] + " " + pair[1] + "\n")
++        body = body + pair[0] + " " + pair[1] + "\n"
+         i = i + 1
+     }
+     if len(warnings) > 0 {
+-        f.write("# conflicts:\n")
++        body = body + "# conflicts:\n"
+         j: int = 0
+         while j < len(warnings) {
+-            f.write("# " + warnings[j] + "\n")
++            body = body + "# " + warnings[j] + "\n"
+             j = j + 1
+         }
+     }
+-    f.close()
++    atomic_write(LOCKFILE, body)
+ }
+ 
+ def read_lock() -> dict[str, str] {
+@@ -1422,10 +1756,13 @@
+         print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+         exit_now(1)
+     }
++    # v0.5.5: read the manifest FIRST (even on the lock-exact path). A corrupt
++    # manifest must be refused before anything is installed or pruned, not
++    # silently treated as "no deps" after a lock-exact restore.
++    direct: dict[str, str] = manifest_direct_deps()
+     # lock-exact restore (like `npm ci`): if a lock exists and covers every
+     # manifest dep, install EXACTLY the locked versions — no re-resolution.
+     lock: dict[str, str] = read_lock()
+-    direct: dict[str, str] = manifest_direct_deps()
+     usable: bool = file_exists(LOCKFILE) and len(lock) > 0
+     if usable {
+         dk: list[str] = direct.keys()
+@@ -1450,6 +1787,15 @@
+     fetch_all_cached(st)
+     print("catpm: installing exactly from " + LOCKFILE + " (lock-exact; no re-resolution)")
+     names: list[str] = lock.keys()
++    # v0.5.5: prefetch every locked package concurrently before the (already
++    # sequential) unpack loop — cold restores of N packages download in parallel
++    ordlist: list[str] = []
++    oi: int = 0
++    while oi < len(names) {
++        ordlist.append(names[oi] + "@" + lock[names[oi]])
++        oi = oi + 1
++    }
++    prefetch_all(st, ordlist)
+     # deterministic order: sort by name
+     i: int = 1
+     while i < len(names) {
+@@ -1576,10 +1922,7 @@
+     direct: dict[str, str] = manifest_direct_deps()
+     if len(direct) == 0 {
+         print("catpm: no dependencies in " + MANIFEST + " (writing empty lock, pruning)")
+-        f: File = file(LOCKFILE, "w")
+-        f.write("# catpm lock file v2 (generated, do not edit)\n")
+-        f.write("# format: name version\n")
+-        f.close()
++        write_lock([], [])
+         prune()
+         return
+     }
+@@ -1601,6 +1944,7 @@
+         k = k + 1
+     }
+     print("catpm: installing into ./" + DEPSDIR + "/")
++    prefetch_all(st, order)
+     j = 0
+     while j < len(order) {
+         pair: list[str] = order[j].split("@")
+@@ -1709,6 +2053,149 @@
+     print_self_notice(newest)
+ }
+ 
++# v0.5.5: remove leftovers of an interrupted self-update: a staged candidate
++# binary (<bindir>/catpm.new) and/or the self-stage unpack dir. These are
++# never valid state — the next self-update rebuilds both from scratch.
++# Returns how many items were swept (0 = clean).
++def sweep_self_residues(bd: str) -> int {
++    n: int = 0
++    cand: str = bd + "/catpm.new"
++    if file_exists(cand) {
++        sh_die("rm -f '" + cand + "'", "sweep stale candidate " + cand)
++        print("catpm: swept interrupted self-update residue: " + cand)
++        n = n + 1
++    }
++    stage: str = CACHEDIR + "/self-stage"
++    if isdir(stage) {
++        sh_die("rm -rf '" + stage + "'", "sweep stale self-stage")
++        print("catpm: swept interrupted self-update residue: " + stage)
++        n = n + 1
++    }
++    return n
++}
++
++# 'catpm fix': detect and repair everything an interrupted run can leave
++# behind, then report. Exit 0 when the tree is consistent afterwards.
++#   1. *.catpm-tmp next to state files (crash mid atomic_write)
++#   2. deps/.stage-* dirs (crash mid unpack of a package)
++#   3. cached .cpkg files whose sha256 disagrees with the current index
++#      (crash mid download) — deleted so the next install re-downloads
++#   4. interrupted self-update residues (catpm.new / self-stage)
++#   5. deps/<name> present but lock missing the entry: left to the user
++#      (a lock-exact 'install' or 'add' resolves it) — reported, not guessed
++def cmd_fix() {
++    print("catpm: fix — scanning for interrupted-run residues")
++    fixed: int = 0
++    # 1. orphaned atomic-write temporaries
++    tmps: list[str] = [MANIFEST + ".catpm-tmp", LOCKFILE + ".catpm-tmp",
++                       idx_cachedir() + "/meta.json.catpm-tmp"]
++    if isdir(idx_cachedir()) {
++        ic: list[str] = listdir(idx_cachedir())
++        j: int = 0
++        while j < len(ic) {
++            if ic[j].endswith(".catpm-tmp") {
++                tmps.append(idx_cachedir() + "/" + ic[j])
++            }
++            j = j + 1
++        }
++    }
++    i: int = 0
++    while i < len(tmps) {
++        if file_exists(tmps[i]) {
++            sh_die("rm -f '" + tmps[i] + "'", "sweep " + tmps[i])
++            print("  swept orphaned temp: " + tmps[i])
++            fixed = fixed + 1
++        }
++        i = i + 1
++    }
++    # 2. staged unpack dirs
++    if isdir(DEPSDIR) {
++        dents: list[str] = listdir(DEPSDIR)
++        i = 0
++        while i < len(dents) {
++            if dents[i].startswith(".stage-") and isdir(DEPSDIR + "/" + dents[i]) {
++                sh_die("rm -rf '" + DEPSDIR + "/" + dents[i] + "'", "sweep " + dents[i])
++                print("  swept interrupted unpack: " + DEPSDIR + "/" + dents[i])
++                fixed = fixed + 1
++            }
++            i = i + 1
++        }
++    }
++    # 4. self-update residues
++    fixed = fixed + sweep_self_residues(self_bindir())
++    # 3. corrupt cache entries (needs the index for sha256s; offline or no
++    #    sources -> skipped honestly, the next install re-checks anyway)
++    st: dict[str, any] = load_sources()
++    fetch_all_cached(st)
++    oa: any = st.get("ok", None)
++    ok: list[str] = oa
++    ia: any = st.get("idxs", None)
++    idxs: dict[str, any] = ia
++    if isdir(CACHEDIR) {
++        names: list[str] = listdir(CACHEDIR)
++        i = 0
++        while i < len(names) {
++            cname: str = names[i]
++            if isdir(CACHEDIR + "/" + cname) {
++                fs: list[str] = listdir(CACHEDIR + "/" + cname)
++                j: int = 0
++                while j < len(fs) {
++                    fname: str = fs[j]
++                    if fname.endswith(".cpkg") and fname.startswith(cname + "-") {
++                        # name-<version>.cpkg -> version in the middle
++                        stem: str = fname[0:len(fname) - len(".cpkg")]
++                        vpart: str = stem[len(cname) + 1:len(stem)]
++                        if vpart != "" {
++                            ent: dict[str, any] = {}
++                            m: int = 0
++                            while m < len(ok) {
++                                iv: any = idxs.get(ok[m], None)
++                                if iv is not None {
++                                    idxd: dict[str, any] = iv
++                                    e2: dict[str, any] = index_entry(idxd, cname, vpart)
++                                    if len(e2.keys()) > 0 {
++                                        ent = e2
++                                        break
++                                    }
++                                }
++                                m = m + 1
++                            }
++                            want: str = util.get_str(ent, "sha256", "")
++                            if want != "" {
++                                p: str = CACHEDIR + "/" + cname + "/" + fname
++                                got: str = sha256_of(p)
++                                if got != want {
++                                    sh_die("rm -f '" + p + "'", "purge corrupt cache " + p)
++                                    print("  purged corrupt cached package (sha256 mismatch): " + p)
++                                    fixed = fixed + 1
++                                }
++                            }
++                        }
++                    }
++                    j = j + 1
++                }
++            }
++            i = i + 1
++        }
++    }
++    # 5. report deps/ entries the lock does not know about
++    if isdir(DEPSDIR) {
++        lock: dict[str, str] = read_lock()
++        dents: list[str] = listdir(DEPSDIR)
++        i = 0
++        while i < len(dents) {
++            n: str = dents[i]
++            if isdir(DEPSDIR + "/" + n) and not n.startswith(".") {
++                if not lock.contains(n) {
++                    print("  note: " + DEPSDIR + "/" + n + " has no lock entry (install/add will reinstall or prune it)")
++                }
++            }
++            i = i + 1
++        }
++    }
++    print("catpm: fix complete (" + str(fixed) + " item(s) repaired)")
++}
++
+ # ============================================================
+ # self-update — update the catpm binary itself (like 'apt install apt').
+ # catpm is a normal package in the registry (name "catpm"); its .cpkg
+@@ -1739,6 +2226,10 @@
+         print("  self-update needs the binary to be installed as 'catpm'")
+         exit_now(1)
+     }
++    # v0.5.5: sweep residues of an INTERRUPTED earlier self-update before
++    # doing anything else — a leftover catpm.new candidate or self-stage dir
++    # is never a valid starting state for a new attempt.
++    sweep_self_residues(bd)
+     st: dict[str, any] = load_sources()
+     fetch_all(st)
+     vers: dict[str, any] = merged_versions(st, SELF_NAME)
+@@ -1759,68 +2250,38 @@
+         print("catpm: already up to date")
+         return
+     }
+-    # download the catpm package cpkg into the cache (same path rules as install_one)
+-    ia: any = st.get("idxs", None)
+-    idxs: dict[str, any] = ia
+-    rv: any = vers.get(target, None)
+-    roots_any: list[str] = rv
+-    rel: str = ""
++    # download the catpm package cpkg into the cache (same path rules and
++    # v0.5.5 crash-heal as install_one)
++    cdir: str = CACHEDIR + "/" + SELF_NAME
++    mkdir(CACHEDIR)
++    mkdir(cdir)
++    cpkg: str = cdir + "/" + SELF_NAME + "-" + target + ".cpkg"
+     want_sha: str = ""
+-    cpkg: str = ""
+-    k: int = 0
+-    gotit: bool = False
+-    while k < len(roots_any) {
+-        r: str = roots_any[k]
+-        iv: any = idxs.get(r, None)
+-        if iv is None {
+-            k = k + 1
+-            continue
+-        }
+-        idxd: dict[str, any] = iv
+-        ent: dict[str, any] = index_entry(idxd, SELF_NAME, target)
+-        rel = util.get_str(ent, "path", "")
+-        want_sha = util.get_str(ent, "sha256", "")
+-        if rel == "" {
+-            k = k + 1
+-            continue
+-        }
+-        cdir: str = CACHEDIR + "/" + SELF_NAME
+-        mkdir(CACHEDIR)
+-        mkdir(cdir)
+-        cpkg = cdir + "/" + SELF_NAME + "-" + target + ".cpkg"
+-        if file_exists(cpkg) {
+-            print("  cached " + cpkg)
+-        } else if kind_of(r) == "url" {
+-            url: str = r + "/" + rel
+-            print("  downloading catpm@" + target + " <- " + url)
+-            rc: int = http_download_soft(url, cpkg)
+-            if rc != 0 {
+-                print("  source " + r + " failed (curl exit " + str(rc) + "), trying next")
+-                if file_exists(cpkg) {
+-                    delete_file(cpkg)
+-                }
+-                k = k + 1
+-                continue
+-            }
+-        } else {
+-            src: str = r + "/" + rel
+-            if not file_exists(src) {
+-                print("  source " + r + " missing file " + src + ", trying next")
+-                k = k + 1
+-                continue
++    if file_exists(cpkg) {
++        print("  cached " + cpkg)
++        want: str = util.get_str(index_entry_of(st, SELF_NAME, target), "sha256", "")
++        got0: str = sha256_of(cpkg)
++        if want != "" and got0 != want {
++            print("catpm: cached copy fails sha256 (interrupted download?) — re-fetching")
++            delete_file(cpkg)
++            want_sha = refetch_cpkg(st, SELF_NAME, target, cpkg)
++            if not file_exists(cpkg) {
++                print("catpm: all sources failed to provide catpm@" + target)
++                exit_now(1)
+             }
+-            print("  copying catpm@" + target + " <- " + src)
+-            copy_file(src, cpkg)
+         }
+-        gotit = True
+-        break
+-    }
+-    if not gotit {
+-        print("catpm: all sources failed to provide catpm@" + target)
+-        exit_now(1)
++    } else {
++        want_sha = refetch_cpkg(st, SELF_NAME, target, cpkg)
++        if not file_exists(cpkg) {
++            print("catpm: all sources failed to provide catpm@" + target)
++            exit_now(1)
++        }
+     }
+     # sha256 gate: a tampered/corrupt package must never touch the live binary
+     got: str = sha256_of(cpkg)
++    if want_sha == "" {
++        want_sha = util.get_str(index_entry_of(st, SELF_NAME, target), "sha256", "")
++    }
+     if want_sha != "" and got != want_sha {
+         print("catpm: sha256 MISMATCH for " + cpkg)
+         print("  index:  " + want_sha)
+@@ -1887,7 +2348,7 @@
+     i = 0
+     while i < len(names) {
+         n: str = names[i]
+-        if isdir(DEPSDIR + "/" + n) {
++        if isdir(DEPSDIR + "/" + n) and not n.startswith(".") {
+             v: str = lock.get(n, "?")
+             tag: str = ""
+             if v == "?" {
+@@ -1928,7 +2389,7 @@
+     i: int = 0
+     while i < len(names) {
+         n: str = names[i]
+-        if isdir(DEPSDIR + "/" + n) {
++        if isdir(DEPSDIR + "/" + n) and not n.startswith(".") {
+             if not lock.contains(n) {
+                 print("catpm: pruned " + DEPSDIR + "/" + n + " (no longer needed)")
+                 sh_die("rm -rf '" + DEPSDIR + "/" + n + "'", "prune " + n)

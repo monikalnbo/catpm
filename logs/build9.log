@@ -1,0 +1,29 @@
+
+==================================================
+== BUILD LOG v9 — catpm 0.5.5 (interrupt resilience)  2026-11-10 15:31:38Z
+==================================================
+catcc: CatBase Compiler (catcc) 0.1.8   zig: 0.14.1
+
+
+==================================================
+== [1/2] version engine unit tests (62 assertions; unchanged from 0.5.3)
+==================================================
+Compilation successful.
+ALL VER TESTS PASSED
+exit=0
+
+
+==================================================
+== [2/2] fresh compile of the 0.5.5 source
+==================================================
+
+real	0m12.823s
+user	0m12.030s
+sys	0m1.063s
+-rwxr-xr-x 1 root root 324976 Nov 10 23:31 /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/catpm55
+catpm 0.5.5 (for CatBase 0.1.8)
+
+
+==================================================
+== DONE build9  2026-11-10 15:31:54Z
+==================================================
