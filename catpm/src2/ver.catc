@@ -123,6 +123,14 @@ def split_pkg(s: str) -> list[str] {
         out.append("latest")
         return out
     }
+    # "name@" with nothing after @ is a typo, not "latest" (npm semantics:
+    # empty spec is invalid; v0.5.2: previously written verbatim into the
+    # manifest where satisfies() then treated it as latest by accident)
+    if at + 1 >= len(s) {
+        out.append(s[0:at])
+        out.append("!invalid")
+        return out
+    }
     out.append(s[0:at])
     out.append(s[at+1:len(s)])
     return out
@@ -132,6 +140,11 @@ def split_pkg(s: str) -> list[str] {
 # spec may be a comma-separated AND list: ">=0.2.0,<0.3.0"
 def satisfies(v: str, spec: str) -> bool {
     parts: list[str] = spec.split(",")
+    # ">=1.0," (trailing comma) yields an empty member; a stray empty
+    # constraint must not silently mean "anything goes" (v0.5.2)
+    if len(parts) == 1 and parts[0].strip() == "" {
+        return False
+    }
     i: int = 0
     while i < len(parts) {
         p: str = parts[i].strip()
@@ -144,28 +157,60 @@ def satisfies(v: str, spec: str) -> bool {
 }
 
 # does v satisfy a single (non-comma) constraint?
+# Bounds must be well-formed (1-3 all-digit dot segments) — a malformed bound
+# like ">=x" or ">=" never matches instead of silently meaning ">=0.0.0"
+# (v0.5.2: previously seg() returned 0 for junk, making every version match).
+def valid_bound(b: str) -> bool {
+    if b == "" {
+        return False
+    }
+    n: int = vlen(b)
+    if n < 1 or n > 3 {
+        return False
+    }
+    # vlen stops at the first non-digit segment; n == number of '.'-split
+    # segments means every segment scanned was all digits
+    ps: list[str] = b.split(".")
+    return n == len(ps)
+}
+
 def satisfies_one(v: str, spec: str) -> bool {
-    if spec == "latest" or spec == "*" or spec == "" {
+    if spec == "latest" or spec == "*" {
         return True
     }
     if spec.startswith(">=") {
         b: str = spec[2:len(spec)]
+        if not valid_bound(b) {
+            return False
+        }
         return vcmp(v, b) >= 0
     }
     if spec.startswith("<=") {
         b: str = spec[2:len(spec)]
+        if not valid_bound(b) {
+            return False
+        }
         return vcmp(v, b) <= 0
     }
     if spec.startswith(">") {
         b: str = spec[1:len(spec)]
+        if not valid_bound(b) {
+            return False
+        }
         return vcmp(v, b) > 0
     }
     if spec.startswith("<") {
         b: str = spec[1:len(spec)]
+        if not valid_bound(b) {
+            return False
+        }
         return vcmp(v, b) < 0
     }
     if spec.startswith("^") {
         b: str = spec[1:len(spec)]
+        if not valid_bound(b) {
+            return False
+        }
         if vcmp(v, b) < 0 {
             return False
         }
@@ -177,12 +222,18 @@ def satisfies_one(v: str, spec: str) -> bool {
     }
     if spec.startswith("~") {
         b: str = spec[1:len(spec)]
+        if not valid_bound(b) {
+            return False
+        }
         if vcmp(v, b) < 0 {
             return False
         }
         return vcmp(v, bump(b, 1)) < 0
     }
     # exact
+    if not valid_bound(spec) {
+        return False
+    }
     return vcmp(v, spec) == 0
 }
 

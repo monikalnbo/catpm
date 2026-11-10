@@ -1,0 +1,12 @@
+diff -ruN /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/diffs/v0.5.0/catpm.cat /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/diffs/v0.5.1/catpm.cat
+--- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/diffs/v0.5.0/catpm.cat	2026-11-10 16:13:12.060479368 +0800
++++ /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/diffs/v0.5.1/catpm.cat	2026-11-10 16:13:12.076479413 +0800
+@@ -49,7 +49,7 @@
+ import ./util.catc as util
+ import ./ver.catc as ver
+ 
+-CATPM_VERSION: str = "0.5.0"
++CATPM_VERSION: str = "0.5.1"
+ 
+ import ./util.catc as util
+ import ./ver.catc as ver

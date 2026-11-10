@@ -1,0 +1,80 @@
+
+==================================================
+== RUN LOG v6 — polish fixes + self-update chain  2026-11-10 08:40:45Z
+==================================================
+
+==================================================
+== [1/4] fix #1 (junk/empty bounds): 0.5.0 accepted '>=x' and 'pkg@', 0.5.2 rejects
+==================================================
+-- old 0.5.0:
+catpm: added mathx '>=x' to catpm.json (resolves to 0.4.0)
+  (old build wrote the junk spec into catpm.json AND resolved 0.4.0 — the bug)
+-- new 0.5.2:
+catpm: no version of mathx satisfies '>=x' (available: 0.2.0 0.3.0 0.4.0)
+exit=1
+catpm: no version of mathx satisfies '^junk' (available: 0.2.0 0.3.0 0.4.0)
+exit=1
+catpm: no version of mathx satisfies '!invalid' (available: 0.2.0 0.3.0 0.4.0)
+exit=1
+catpm: no version of mathx satisfies '>=0.2.0,' (available: 0.2.0 0.3.0 0.4.0)
+exit=1
+-- manifest after all rejected adds (only old build's write remains; new build touched nothing):
+{"deps":{"mathx":">=x"},"name":"f1"}
+-- legit bounds still work:
+catpm: added mathx '^0.2.0' to catpm.json (resolves to 0.2.0)
+
+
+==================================================
+== [2/4] fix #2 (exit codes): usage errors used to exit 0, now 1
+==================================================
+-- old 0.5.0:
+add-no-arg exit=0
+unknown-cmd exit=0
+-- new 0.5.2:
+add-no-arg exit=1
+unknown-cmd exit=1
+remove-no-arg exit=1
+publish-no-arg exit=1
+
+
+==================================================
+== [3/4] fix #3 (dir guards): lock/manifest-as-dir used to SIGABRT (rc 134)
+==================================================
+-- new 0.5.2 (old build dies with rc=134 here):
+catpm: catpm.lock is a directory, not a file — cannot read lock
+exit=1
+catpm: catpm.lock is a directory, not a file — cannot read lock
+exit=1
+catpm: no ./deps/ directory (nothing installed)
+exit=0
+catpm: package.where path is a directory, not a file: ./package.where
+sources-with-dir-where exit=1
+-- normal ops restored after cleanup:
+catpm: no ./deps/ directory (nothing installed)
+exit=0
+
+
+==================================================
+== [4/4] self-update full chain over live HTTPS
+==================================================
+step0: catpm 0.5.0 (for CatBase 0.1.8)
+  sha256 ok (3696c5345af36a9d...)
+  candidate verified: catpm 0.5.1 (for CatBase 0.1.8)
+catpm: updated /tmp/tmp.qa3AhW9ECA/su/bin/catpm -> 0.5.1
+step1: catpm 0.5.1 (for CatBase 0.1.8)
+catpm: sha256 MISMATCH for .catpm-cache/catpm/catpm-0.5.2.cpkg
+step2: catpm 0.5.1 (for CatBase 0.1.8)
+step3 (explicit downgrade): catpm 0.5.1 (for CatBase 0.1.8)
+no .new residue
+
+
+==================================================
+== raw direct-link checks
+==================================================
+200  catpm/catpm-0.5.2.cpkg
+200  index.json
+
+
+==================================================
+== DONE run6  2026-11-10 08:40:48Z
+==================================================
