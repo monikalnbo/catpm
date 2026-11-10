@@ -1,0 +1,35 @@
+# GitHub language bar mechanics (verified against Linguist behavior):
+#   The bar only shows languages registered in github/linguist. CatBase is NOT
+#   registered; registration needs an upstream PR plus real-world usage
+#   (CONTRIBUTING.md asks for ~2000 files on GitHub per extension — a search
+#   today finds 2 .catc files in the world). So "CatBase" cannot appear in
+#   the bar, and we do not pretend otherwise.
+#
+# What we CAN do honestly:
+#   1. Map CatBase source to the registered language it most resembles.
+#      CatBase syntax is Python-flavored (def/print/str/int, # comments),
+#      so .catc/.cat are counted as Python via linguist-language.
+#   2. Mark logs and generated files linguist-generated so they leave the stats.
+#   3. Mark our install scripts + binaries linguist-vendored (they are delivery
+#      artifacts, not the project's source) so Shell stops dominating the bar.
+#   Result (verified via gh api after push): the bar reflects the actual
+#   product — the CatBase package manager source — instead of "100% Shell".
+
+# --- CatBase source -> Python (closest registered language) ---
+*.catc  linguist-language=Python
+*.cat   linguist-language=Python
+
+# --- logs / generated: excluded from stats ---
+logs/*.log linguist-generated
+*.diff     linguist-generated
+*.lock     linguist-generated
+
+# --- delivery artifacts: vendored (stay in repo, leave the stats) ---
+install.sh    linguist-vendored
+install.fish  linguist-vendored
+scripts/*.sh  linguist-vendored
+catpm/catpm5* linguist-vendored
+catpm/catpm4  linguist-vendored
+catpm/catpm3  linguist-vendored
+catpm/catpm2  linguist-vendored
+demo*/        linguist-vendored
