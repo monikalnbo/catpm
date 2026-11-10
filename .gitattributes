@@ -25,11 +25,13 @@ logs/*.log linguist-generated
 *.lock     linguist-generated
 
 # --- delivery artifacts: vendored (stay in repo, leave the stats) ---
-install.sh    linguist-vendored
-install.fish  linguist-vendored
-scripts/*.sh  linguist-vendored
-catpm/catpm5* linguist-vendored
-catpm/catpm4  linguist-vendored
-catpm/catpm3  linguist-vendored
-catpm/catpm2  linguist-vendored
-demo*/        linguist-vendored
+install.sh     linguist-vendored
+install.fish   linguist-vendored
+scripts/**     linguist-vendored
+probe/**       linguist-vendored
+catpm/catpm52  linguist-vendored
+catpm/catpm5   linguist-vendored
+catpm/catpm4   linguist-vendored
+catpm/catpm3   linguist-vendored
+catpm/catpm2   linguist-vendored
+demo*/**       linguist-vendored
