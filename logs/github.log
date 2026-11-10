@@ -1,0 +1,20 @@
+# GitHub open-sourcing evidence — 2026-11-10 03:16:24Z
+$ gh auth status
+  ✓ Logged in to github.com account monikalnbo (/root/.config/gh/hosts.yml)
+  - Active account: true
+  - Token scopes: 'admin:enterprise', 'admin:gpg_key', 'admin:org', 'admin:org_hook', 'admin:public_key', 'admin:repo_hook', 'admin:ssh_signing_key', 'audit_log', 'codespace', 'delete:packages', 'delete_repo', 'gist', 'notifications', 'project', 'repo', 'user', 'workflow', 'write:discussion', 'write:network_configurations', 'write:packages'
+
+$ gh repo create catpm --public --source=. --push   (in /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo, 32 files, 404K)
+output:
+https://github.com/monikalnbo/catpm
+To https://github.com/monikalnbo/catpm.git
+ * [new branch]      HEAD -> main
+
+$ git -C /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo log --oneline
+de55f67 catpm v0.2: CatBase package manager with pip/npm-style semantics
+
+$ gh repo view monikalnbo/catpm --json url,visibility,pushedAt -q '.'
+{"url":"https://github.com/monikalnbo/catpm","visibility":"PUBLIC"}
+
+remote source check: curl raw index.json status:
+  https://raw.githubusercontent.com/monikalnbo/catpm/main/registry/index.json -> 200

@@ -24,7 +24,7 @@ git add registry/ && git commit -m "publish <name>@<ver>" && git push
 ## 3. 使用（远程 URL 源）
 
 ```bash
-export CATPM_REGISTRY=https://raw.githubusercontent.com/<user>/catpm/main/registry
+export CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm/main/registry
 catpm add <name>[@spec]
 ```
 

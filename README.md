@@ -30,7 +30,7 @@ catcc main.cat -o app && ./app   引用直接+传递依赖，运行正确
 
 ## 2. 安装
 
-前置：Linux + [CatBase v0.1.8](https://github.com/)（`bin/catcc`、`conf/`、`runtime/`）+ 系统 `tar`/`sha256sum`/`curl`（Linux 发行版均自带）。
+前置：Linux + CatBase v0.1.8（`bin/catcc`、`conf/`、`runtime/`）+ 系统 `tar`/`sha256sum`/`curl`（Linux 发行版均自带）。
 
 ```bash
 # 从源码构建（catcc 编译 catpm 自身）
@@ -90,7 +90,7 @@ def main() {
 ## 5. 把本仓库当远程源用
 
 ```bash
-export CATPM_REGISTRY=https://raw.githubusercontent.com/<user>/catpm/main/registry
+export CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm/main/registry
 catpm add mathx        # 真实 HTTPS 下载 + sha256 校验 + 缓存
 ```
 

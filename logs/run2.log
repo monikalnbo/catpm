@@ -1,0 +1,155 @@
+
+==================================================
+== RUN LOG v2 — catpm ecosystem demo 2026-11-10 03:15:58Z
+==================================================
+
+==================================================
+== [1/8] pack all packages from pkgsrc/
+==================================================
+$ (cd pkgsrc/stringx && catpm pack)
+catpm: packed stringx@0.3.0 -> dist/stringx-0.3.0.cpkg
+  size: 534 bytes   sha256: d18d707dd4f1cc5a92b875f2d7bdb34a4a7e2d36db586861f0622e7c913035c1
+exit=0
+$ (cd pkgsrc/mathx && catpm pack)
+catpm: packed mathx@0.2.0 -> dist/mathx-0.2.0.cpkg
+  size: 575 bytes   sha256: d449df5c3d849a25d97b0d44905d3ceb2197cf08520b79e96680146a730e2ca3
+exit=0
+$ (cd pkgsrc/mathx3 && catpm pack)
+catpm: packed mathx@0.3.0 -> dist/mathx-0.3.0.cpkg
+  size: 621 bytes   sha256: 4325335c700c6eeb254c13360afb732e8d1f76e272a1ed1a6832bf911fcb0e3f
+exit=0
+$ (cd pkgsrc/fmtx && catpm pack)
+catpm: packed fmtx@0.1.0 -> dist/fmtx-0.1.0.cpkg
+  size: 409 bytes   sha256: eba41178c16adc51ae329ba4f741b515185583365013c9c5daced1bf5f4fd194
+exit=0
+
+==================================================
+== [2/8] publish into fresh registry2/
+==================================================
+$ (cd pkgsrc/stringx && catpm publish ../registry2)
+exit=0 stringx
+$ (cd pkgsrc/mathx && catpm publish ../registry2)
+exit=0 mathx
+$ (cd pkgsrc/mathx3 && catpm publish ../registry2)
+exit=0 mathx3
+$ (cd pkgsrc/fmtx && catpm publish ../registry2)
+exit=0 fmtx
+--- registry2/index.json ---
+{"packages":{"fmtx":{"0.1.0":{"sha256":"eba41178c16adc51ae329ba4f741b515185583365013c9c5daced1bf5f4fd194","deps":{"stringx":"^0.3.0"},"path":"fmtx/fmtx-0.1.0.cpkg"}},"mathx":{"0.2.0":{"sha256":"d449df5c3d849a25d97b0d44905d3ceb2197cf08520b79e96680146a730e2ca3","deps":{"stringx":"^0.3.0"},"path":"mathx/mathx-0.2.0.cpkg"},"0.3.0":{"sha256":"4325335c700c6eeb254c13360afb732e8d1f76e272a1ed1a6832bf911fcb0e3f","deps":{"stringx":"^0.3.0"},"path":"mathx/mathx-0.3.0.cpkg"}},"stringx":{"0.3.0":{"sha256":"d18d707dd4f1cc5a92b875f2d7bdb34a4a7e2d36db586861f0622e7c913035c1","deps":{},"path":"stringx/stringx-0.3.0.cpkg"}}}}
+
+==================================================
+== [3/8] fresh project: add with ^0.2.0 (must pin 0.2.0, not 0.3.0)
+==================================================
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+catpm: added mathx '^0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry2)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [4/8] add fmtx (diamond via stringx) + list + lock
+==================================================
+catpm: added fmtx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry2)
+catpm: resolved 3 package(s):
+  - fmtx@0.1.0
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  installed fmtx@0.1.0 (sha256 ok) -> deps/fmtx/index.catc
+  cached .catpm-cache/mathx/mathx-0.2.0.cpkg
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+installed packages in ./deps:
+  fmtx  0.1.0
+  mathx  0.2.0
+  stringx  0.3.0
+--- catpm.lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+fmtx 0.1.0
+mathx 0.2.0
+stringx 0.3.0
+--- catpm.json ---
+{"deps":{"fmtx":"latest","mathx":"^0.2.0"},"name":"my-project","catpm":"0.2.0"}
+
+==================================================
+== [5/8] specifier re-check: fresh dir, ~0.2.0 and >=0.3
+==================================================
+$ catpm add 'mathx@~0.2.0'
+catpm: added mathx '~0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry2)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+$ catpm add 'mathx@>=0.3' (in another fresh dir)
+catpm: added mathx '>=0.3' to catpm.json (resolves to 0.3.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry2)
+catpm: resolved 2 package(s):
+  - mathx@0.3.0
+$ catpm add 'mathx@^9.0.0' (unsatisfiable -> must fail rc=1)
+catpm: no version of mathx satisfies '^9.0.0' (available: 0.2.0 0.3.0)
+exit=1 (expect 1)
+
+==================================================
+== [6/8] compile + run demo2 (local source, ^-pinned)
+==================================================
+$ catcc main.cat -o app
+Compilation successful.
+app: 84704 bytes
+$ ./app
+== catpm v0.2 spec-resolved demo ==
+mathx pinned by ^0.2.0 ->  0.2.0  fib(10)= 55
+transitive: mathx.loud_double(21) =  42!
+diamond: fmtx.banner('catpm') =  =========== catpm ============
+stringx.reverse('pack') =  kcap
+exit=0
+
+==================================================
+== [7/8] REAL REMOTE install from GitHub raw URL
+==================================================
+CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm/main/registry
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+catpm: added mathx '^0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm/main/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  downloading mathx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/main/registry/mathx/mathx-0.2.0.cpkg
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  downloading stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/main/registry/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+mathx 0.2.0
+stringx 0.3.0
+--- cache ---
+.catpm-cache/mathx/mathx-0.2.0.cpkg
+.catpm-cache/stringx/stringx-0.3.0.cpkg
+
+==================================================
+== [8/8] compile + run remote-installed app
+==================================================
+$ catcc main.cat -o app
+Compilation successful.
+$ ./app
+== remote-source install demo ==
+mathx  0.2.0  fib(10)= 55  gcd(48,36)= 12
+transitive stringx.reverse('tar') =  rat
+exit=0
+
+END OF RUN LOG v2
