@@ -3,7 +3,7 @@
 catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、预编译二进制包（v0.5.3）、apt update 式索引缓存 + pip 式新版本提示（v0.5.4）、**中断恢复：任意时刻被杀重跑即续 + 并行下载（v0.5.5）**，一应俱全——全部用一门新语言实现。
 
 > 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0、仓库与发版产物规范 §4.6a/§4.6b）。
-> 专题手册：**[docs/perf.md](docs/perf.md)**（性能实测：catpm vs apt vs cargo）、**[docs/release.md](docs/release.md)**（发版 checklist）、**[docs/registry.md](docs/registry.md)**（源与发布操作手册）。
+> 专题手册：**[docs/guide.md](docs/guide.md)**（教程速查：上手 + 进阶）、**[docs/perf.md](docs/perf.md)**（性能实测：catpm vs apt vs cargo）、**[docs/release.md](docs/release.md)**（发版 checklist）、**[docs/registry.md](docs/registry.md)**（源与发布操作手册）。
 > **v0.4 起仓库分离**：包集中在专用仓库 **[monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**；本仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。
 
 ---
@@ -77,6 +77,8 @@ cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm55  # ~13 s
 不想构建时直接用仓库里已编译的 `catpm/catpm55`（x86_64 Linux ELF）。
 
 > 说明：安装脚本只是「下载 + 放对位置」，catpm 自身运行还依赖系统 `tar`/`sha256sum`/`curl`（包管理操作用）；`catpm --version`、`catpm sources` 等纯命令无这些也能跑。
+
+> 上手教程（叙事版，上手四块 + 进阶五块）见 [docs/guide.md](docs/guide.md) 索引；本节是权威命令清单。
 
 ## 3. 用法
 
@@ -177,18 +179,20 @@ def main() {
 
 ## 5. 仓库分离：包都在 catpm-registry（v0.4）
 
-**[github.com/monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**（PUBLIC）是包仓库：`index.json` + `<name>/<name>-<ver>.cpkg` 放仓库根，当前 8 包 15 版本：
+**[github.com/monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**（PUBLIC）是包仓库：`index.json` + `<name>/<name>-<ver>.cpkg` 放仓库根。v0.5.5 起 registry 只保留各包**最新版本**（规则见 §5c 第 6 条与 PROTOCOL.md §4.6b），当前 8 包各 1 版：
 
 | 包 | 版本 | 用途 | 依赖 |
 |---|---|---|---|
-| mathx | 0.2.0 / 0.3.0 / 0.4.0 | 算术（fib、gcd、完美数等） | stringx ^0.3.0 |
+| mathx | 0.4.0 | 算术（fib、gcd、完美数等） | stringx ^0.3.0 |
 | stringx | 0.3.0 | 字符串工具（shout、capitalize…） | — |
 | fmtx | 0.1.0 | 格式化输出 | stringx ^0.3.0 |
 | loganx | 0.1.0 | 带时间戳日志 | — |
 | **timex** | 0.1.0 | **v0.4 新增**：真实时间（`iso8601()`/`epoch()`/`stamp()`/`days_between()`，经 `exec(date)`） | stringx ^0.3.0 |
 | **randx** | 0.1.0 | **v0.4 新增**：种子化确定性 PRNG（`seed`/`between`/`below`/`pick`/`die6`；LCG + 乘法混叠，无位运算可用故纯 `+ * %` 实现） | timex ^0.1.0 |
 | **hellox** | 1.0.0 | **v0.5.3 新增**：首个预编译参考包（含 `bin/hellox` linux-x86_64 ELF） | — |
-| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 / 0.5.3 / 0.5.4 / 0.5.5 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
+| **catpm** | 0.5.5 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
+
+历史版本（catpm 0.4.0–0.5.4、mathx 0.2.0/0.3.0 等）已按只留最新版规则删除，完整内容在 registry git 历史（tag `full-history-pre-0.5.5` 定位最后的全量树），找回方法见 [docs/release.md](docs/release.md)。
 
 本仓库（catpm）只保留 PM 本体：源码、二进制、`package.where`、README/PROTOCOL、安装脚本、日志。**v0.3 及以前放在本仓库的 `registry/`、`registry3/`、`registry-mirror/` 已整体删除（非归档）**——包体与索引全部迁移到 catpm-registry，raw 可达性实测 8/8 个 .cpkg + index.json 全 200（`logs/run4.log` [6/6]）。
 
@@ -340,7 +344,7 @@ catpm: fix complete (6 item(s) repaired)
 catpm/src2/          PM 源码（catpm.cat v0.5.5 + ver.catc + util.catc + test_ver.cat 62 断言）
 catpm/catpm55        编译好的 x86_64 Linux 二进制（v0.5.5，324,976 B；catpm54/catpm53/catpm52 为旧版）
 diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3、v0.5.3..v0.5.4、v0.5.4..v0.5.5；发版规则见 §5c）
-docs/                专题手册：perf.md（性能实测）/ release.md（发版 checklist）/ registry.md（源操作手册）
+docs/                专题手册：guide.md（教程速查）/ perf.md（性能实测）/ release.md（发版 checklist）/ registry.md（源操作手册）
 catpm/package.where  默认源清单（指向 catpm-registry 仓库 GitHub raw）
 install.sh           POSIX sh 安装器（sh/bash/zsh 通用，curl | sh 一键装）
 install.fish         fish 原生安装器（curl | source）

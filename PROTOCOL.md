@@ -314,7 +314,8 @@ catpm 自身的版本演进遵守固定规则：
 **文档规范——README 多写、docs/ 补齐**：
 
 - `README.md` 承担入口职责：安装（curl | sh / 手动）、快速上手、全部命令、配置（package.where / 环境变量）、缓存与 self-update、发版协议、性能说明。
-- `docs/` 下按专题补齐：`docs/perf.md`（性能实测方法与数据）、`docs/release.md`（发版步骤 checklist）、`docs/registry.md`（源与发布操作手册）。后续改动说明**优先落文档**再提交代码。
+- `docs/` 下按专题补齐：`docs/guide.md`（教程速查：上手 + 进阶两篇的要点索引，权威用法以 README/PROTOCOL 为准）、`docs/perf.md`（性能实测方法与数据）、`docs/release.md`（发版步骤 checklist）、`docs/registry.md`（源与发布操作手册）。后续改动说明**优先落文档**再提交代码。
+- 教程文章正文落工作区（`catpm-tutorial.md` 上手篇、`catpm-tutorial-v2.md` 进阶篇），仓库内 docs/guide.md 收编其要点速查；教程中引用的命令、输出、版本号一律来自真实仓库与实测日志，不虚构。
 
 ### 4.6b 发版产物规范（v0.5.5 起长期生效）
 
