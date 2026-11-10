@@ -84,8 +84,22 @@ v0.5.4 冷装 2 包 = 7 个子进程 fork；时间线显示时延大头在串行
 - diff 共 997 行（+622/−161），落盘 `diffs/v0.5.4..v0.5.5.diff`；util.catc / ver.catc 两版完全相同。
 - 逐块人工核对：新增函数全部对应第 9 轮中断恢复特性（atomic_write / refetch_cpkg / sweep_self_residues / cmd_fix 等）与第 10 轮性能优化（prefetch_all / psha / idx 路径 memo / 合并 sh），无未预期漂移。
 
-## 五、遗留与下一步
+## 五、curl|sh 新装实测与收尾状态
 
-- 主仓库推送（源码/二进制 324,976 B/diff/docs/logs/reports）——本报告落盘后执行。
-- curl|sh 新装实测（需主仓库推送后 raw 可达）——待推送后执行并回填结果。
+- 主仓库推送：commit `3a4cd32`（`0.5.5`，源码/二进制/diff/docs/logs/reports 全量）。
+- raw 验证：`catpm/catpm55` 与 `install.sh` 均 200。
+- **curl|sh 新装实测**：`curl -fsSL .../install.sh | sh` 全新环境 → 装出 `catpm 0.5.5 (for CatBase 0.1.8)` + 同目录 package.where；随后全新项目 `catpm add mathx` 从线上源正常安装（stringx+mathx，sha256 ok，写 lock）。新装拿到的就是新版，符合发版要求。
 - registry 仓库本轮起进入「只留最新版」稳态；下次发版按 `docs/release.md` checklist 执行。
+
+## 六、本轮交付物清单
+
+| 交付物 | 位置 |
+|---|---|
+| 性能优化源码（v0.5.5 定稿） | `catpm/src2/catpm.cat` |
+| 二进制 | `catpm/catpm55`（324,976 B，sha256 `d4a07ef2…`） |
+| 版本 diff | `diffs/v0.5.4..v0.5.5.diff`（997 行，+622/−161，已逐块核对） |
+| 性能报告 | `docs/perf.md` + `logs/perf-final.log` + `scripts/perf_v10.sh` |
+| 规范文档 | `PROTOCOL.md` §4.6a/§4.6b、`docs/release.md`、`docs/registry.md` |
+| 中断恢复实测（重跑） | `logs/build9.log` + `logs/run9.log` |
+| 本报告 | `reports/round10-report.md` |
+| registry 发布 | catpm-registry commit `8f08f8b`（catpm 0.5.5，8 个老版本 cpkg 已删，tag `full-history-pre-0.5.5` 留档） |
