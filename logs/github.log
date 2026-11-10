@@ -18,3 +18,29 @@ $ gh repo view monikalnbo/catpm --json url,visibility,pushedAt -q '.'
 
 remote source check: curl raw index.json status:
   https://raw.githubusercontent.com/monikalnbo/catpm/main/registry/index.json -> 200
+
+== POST-PUSH LIVE VERIFICATION 2026-11-10 (after commit 4d4028d) ==
+
+$ curl raw URLs (all -> 200):
+  registry/index.json -> 200
+  logs/run2.log       -> 200   (first attempt 404, raw CDN propagation; 200 within ~1 min)
+  logs/build2.log     -> 200
+  PROTOCOL.md         -> 200
+  README.md / LICENSE -> 200
+  registry/mathx/mathx-0.2.0.cpkg -> 200
+
+$ cd demo_final && export CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm/main/registry
+$ catpm add 'mathx@~0.2.0'
+  resolved 2: mathx@0.2.0 + stringx@0.3.0 (transitive), both downloaded from raw URL, sha256 ok
+$ catpm add fmtx
+  resolved 3: fmtx@0.1.0 downloaded sha256 ok; mathx/stringx served from .catpm-cache (sha256 re-verified)
+$ catcc main.cat -o app && ./app
+  == catpm v0.2 spec-resolved demo ==
+  mathx pinned by ^0.2.0 ->  0.2.0  fib(10)= 55
+  transitive: mathx.loud_double(21) =  42!
+  diamond: fmtx.banner('catpm') =  =========== catpm ============
+  stringx.reverse('pack') =  kcap
+  exit=0
+
+CONCLUSION: the GitHub repository is a fully working remote source; install from it
+verifies sha256 against index.json, caches, compiles and runs — after the final push.
