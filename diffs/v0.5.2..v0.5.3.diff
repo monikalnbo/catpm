@@ -1,0 +1,177 @@
+# v0.5.2 -> v0.5.3 source diff
+# 0.5.2 snapshot: catpm-0.5.2.cpkg (the shipped artifact — canonical snapshot source)
+# 0.5.3 snapshot: catpm-0.5.3.cpkg (fresh pack of this release)
+
+Binary files /tmp/d53_a/bin/catpm and /tmp/d53_b/bin/catpm differ
+diff -ruN /tmp/d53_a/catpm.json /tmp/d53_b/catpm.json
+--- /tmp/d53_a/catpm.json	2026-11-10 16:39:31.000000000 +0800
++++ /tmp/d53_b/catpm.json	2026-11-10 20:26:11.000000000 +0800
+@@ -1 +1 @@
+-{"name":"catpm","version":"0.5.2","catpm":"0.5.2","deps":{},"files":["bin/catpm","util.catc","ver.catc"]}
++{"name":"catpm","version":"0.5.3","catpm":"0.5.3","deps":{},"files":["bin/catpm","util.catc","ver.catc"]}
+diff -ruN /tmp/d53_a/index.catc /tmp/d53_b/index.catc
+--- /tmp/d53_a/index.catc	2026-11-10 16:39:31.000000000 +0800
++++ /tmp/d53_b/index.catc	2026-11-10 20:26:11.000000000 +0800
+@@ -49,7 +49,7 @@
+ import ./util.catc as util
+ import ./ver.catc as ver
+ 
+-CATPM_VERSION: str = "0.5.2"
++CATPM_VERSION: str = "0.5.3"
+ 
+ import ./util.catc as util
+ import ./ver.catc as ver
+@@ -380,6 +380,104 @@
+     return out.strip().startswith("directory")
+ }
+ 
++# ---------- prebuilt binaries (v0.5.3) ----------
++# A .cpkg may carry a prebuilt executable at bin/<name>. On install the file
++# lands in deps/<name>/bin/<name>, gets its exec bit restored (tar drops it
++# when the packer's umask masks it), and is smoke-checked with --version or
++# --help. Packages without bin/ install exactly as before (pure source).
++#
++# Why not compile-on-install: CatBase has no stable ABI or linker story; the
++# only consumer model is "single-entry source, imports inlined at compile
++# time". A prebuilt binary can only serve standalone tools (like catpm
++# itself), not importable libraries — those remain source-vendored by design.
++
++def host_platform() -> str {
++    # "linux-x86_64" / "linux-aarch64" / "darwin-arm64" ... via uname
++    sys: str = exec("uname -s").strip().lower()
++    mach: str = exec("uname -m").strip().lower()
++    if sys == "linux" {
++        return "linux-" + mach
++    }
++    return sys + "-" + mach
++}
++
++def is_elf(path: str) -> bool {
++    # CatBase has no \xNN escapes (issue #5) and an int index into a str
++    # read in binary mode returns "" — only slices are safe. Check the
++    # 0x7f magic byte through ord(all[0:1]).
++    f: File = file(path, "rb")
++    all: str = f.read()
++    f.close()
++    if len(all) < 4 {
++        return False
++    }
++    if ord(all[0:1]) != 127 {
++        return False
++    }
++    return all[1:4] == "ELF"
++}
++
++def elf_arch_of(path: str) -> str {
++    # e_machine is a little-endian u16 at offset 18
++    f: File = file(path, "rb")
++    body: str = f.read()
++    f.close()
++    if len(body) < 20 {
++        return "?"
++    }
++    lo: int = ord(body[18:19])
++    hi: int = ord(body[19:20])
++    m: int = lo + hi * 256
++    if m == 62 {
++        return "x86_64"
++    }
++    if m == 183 {
++        return "aarch64"
++    }
++    if m == 40 {
++        return "arm"
++    }
++    if m == 3 {
++        return "x86"
++    }
++    return "other"
++}
++
++# check deps/<name>/bin/<name>: executable, ELF-or-shebang, arch matches host
++def prebuilt_check(binp: str) -> str {
++    # result: "" = ok; otherwise a reason string (printed by caller)
++    out: str = exec("stat -c %A '" + binp + "' 2>/dev/null").strip()
++    if out == "" {
++        return "stat failed"
++    }
++    if out.find("x") < 0 {
++        return "no exec bit (mode " + out + ")"
++    }
++    if is_elf(binp) {
++        arch: str = elf_arch_of(binp)
++        host: str = host_platform()
++        if host.find(arch) < 0 {
++            return "ELF " + arch + " but host is " + host
++        }
++    } else {
++        # not ELF: only a #! script is an acceptable prebuilt. Anything else
++        # (e.g. a text file that merely carries the exec bit) would be run by
++        # the shell's ENOEXEC fallback, "execute" garbage, and still look
++        # alive because exec() always sees rc 0 — reject deterministically.
++        f: File = file(binp, "rb")
++        head: str = f.read()
++        f.close()
++        if len(head) < 2 or head[0:2] != "#!" {
++            return "neither ELF nor #! script (first bytes are not a known executable format)"
++        }
++    }
++    run: str = exec("'" + binp + "' --version 2>&1 || '" + binp + "' --help 2>&1 || true")
++    if run.strip() == "" {
++        return "produced no output with --version/--help (not runnable?)"
++    }
++    return ""
++}
++
+ # fetch index.json from every source; unreachable ones warn + skip
+ def fetch_all(st: dict[str, any]) {
+     idxs: dict[str, any] = {}
+@@ -857,6 +955,20 @@
+         exit_now(1)
+     }
+     print("  installed " + name + "@" + version + " (sha256 ok) -> " + dst + "/index.catc")
++    # v0.5.3: a prebuilt binary at bin/<name> is a first-class artifact
++    binp: str = dst + "/bin/" + name
++    if file_exists(binp) {
++        sh_die("chmod 0755 '" + binp + "'", "restore exec bit on " + binp)
++        bad: str = prebuilt_check(binp)
++        if bad != "" {
++            print("catpm: prebuilt bin/" + name + " check FAILED: " + bad)
++            print("  (installed anyway — run it yourself to confirm)")
++        } else {
++            arch: str = elf_arch_of(binp)
++            plat: str = host_platform()
++            print("  prebuilt bin/" + name + " ok (" + plat + " / " + arch + ", executable) -> " + binp)
++        }
++    }
+ }
+ 
+ def copy_file(src: str, dst: str) {
+@@ -1529,6 +1641,27 @@
+     # embed deps for layer-2 resolution without downloading the package
+     deps: dict[str, any] = util.get_dict(m, "deps")
+     entry.put("deps", deps)
++    # v0.5.3: if the archive carries bin/<name>, record its platform fingerprint
++    # in the index so installers can prefer a platform-matching prebuilt.
++    # Field is OPTIONAL: old indexes have no "bin" key (new catpm falls back to
++    # pure source), old catpm ignores unknown keys (never breaks).
++    if file_exists("bin/" + name) {
++        binfo: dict[str, any] = {}
++        binfo.put("path", "bin/" + name)
++        if is_elf("bin/" + name) {
++            arch: str = elf_arch_of("bin/" + name)
++            if arch == "?" {
++                arch = "other"
++            }
++            binfo.put("arch", arch)
++            binfo.put("os", "linux")
++        } else {
++            binfo.put("arch", "any")
++            binfo.put("os", "any")
++        }
++        binfo.put("sha256", sha256_of("bin/" + name))
++        entry.put("bin", binfo)
++    }
+     vers.put(version, entry)
+     pkgs.put(name, vers)
+     idx.put("packages", pkgs)

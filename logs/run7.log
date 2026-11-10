@@ -1,0 +1,109 @@
+
+==================================================
+== RUN LOG v7 — prebuilt packages + verification matrix  2026-11-10 12:30:23Z
+==================================================
+scratch dir: /tmp/tmp.UwKDEiC8lb
+
+==================================================
+== [1/8] prebuilt install end-to-end (clean dir, no catcc involved)
+==================================================
+catpm: added hellox 'latest' to catpm.json (resolves to 1.0.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4)
+catpm: resolved 1 package(s):
+  - hellox@1.0.0
+catpm: installing into ./deps/
+  copying hellox@1.0.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+add exit=0
+mode+size: -rwxr-xr-x 21344
+-- direct run of the installed prebuilt (no compile step anywhere):
+hello 1.0.0
+hellox says hi
+run exit=0
+-- installed binary hash vs publisher's:
+distinct hashes (want 1): 1
+
+
+==================================================
+== [2/8] sha256 tamper intercepted (junk appended to .cpkg, index unchanged)
+==================================================
+catpm: sha256 MISMATCH for .catpm-cache/hellox/hellox-1.0.0.cpkg
+  index:  04d4eef5309b5416463e6eef793fd2a02712a49719aca19a9f2f38a2344a74d0
+  actual: 6c803c748842b764bdbdd97e36c184e3e9ab1e18b7f59ae4a4aad2ab4c8c31fd
+add exit=1
+(no deps/ — gate held, nothing installed)
+
+
+==================================================
+== [3/8] broken prebuilt rejected (text file with exec bit, no ELF no shebang)
+==================================================
+catpm: prebuilt bin/hellox check FAILED: neither ELF nor #! script (first bytes are not a known executable format)
+  (installed anyway — run it yourself to confirm)
+catpm: wrote catpm.lock
+add exit=0 (source installed; bin flagged not trusted)
+why: sh's ENOEXEC fallback would 'run' the text and exec() still sees rc 0 —
+so the check requires ELF magic or a #! shebang, deterministically.
+
+
+==================================================
+== [4/8] wrong-arch ELF rejected (e_machine forged 62->183 aarch64)
+==================================================
+catpm: prebuilt bin/hellox check FAILED: ELF aarch64 but host is linux-x86_64
+  (installed anyway — run it yourself to confirm)
+catpm: wrote catpm.lock
+add exit=0
+
+
+==================================================
+== [5/8] compat: OLD catpm 0.5.2 reads NEW index (with bin field)
+==================================================
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+catpm: wrote catpm.lock
+old-catpm add exit=0
+mode: -rwxr-xr-x (tar preserved the exec bit)
+
+
+==================================================
+== [6/8] compat: NEW catpm 0.5.3 reads OLD index (bin field stripped)
+==================================================
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+new-catpm old-index add exit=0
+
+
+==================================================
+== [7/8] source packages regression (mathx stack compiles and runs)
+==================================================
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+compiled: 1
+55
+app exit=0 (fib(10)=55)
+
+
+==================================================
+== [8/8] live HTTPS: self-update 0.5.2 -> 0.5.3 + clean-dir prebuilt over GitHub
+==================================================
+200  index.json
+200  catpm/catpm-0.5.3.cpkg
+200  hellox/hellox-1.0.0.cpkg
+step0: catpm 0.5.2 (for CatBase 0.1.8)
+  sha256 ok (b3b9da686e3002c9...)
+  candidate verified: catpm 0.5.3 (for CatBase 0.1.8)
+catpm: updated /tmp/tmp.UwKDEiC8lb/su/bin/catpm -> 0.5.3
+step1: catpm 0.5.3 (for CatBase 0.1.8)
+no .new residue
+-- clean dir install of the prebuilt package over live HTTPS:
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+hello 1.0.0
+hellox says hi
+run exit=0
+
+
+==================================================
+== DONE run7  2026-11-10 12:30:27Z
+==================================================

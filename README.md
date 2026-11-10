@@ -1,6 +1,6 @@
 # catpm — 用 CatBase 写的依赖包管理器（pip/npm 式语义 + apt 式源清单 + 四层协议）
 
-catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单，一应俱全——全部用一门新语言实现。
+catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、**预编译二进制包（v0.5.3）**，一应俱全——全部用一门新语言实现。
 
 > 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0）。
 > **v0.4 起仓库分离**：包集中在专用仓库 **[monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**；本仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。
@@ -12,8 +12,8 @@ catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Z
 | | |
 |---|---|
 | 语言 | CatBase v0.1.8（本机验证包；`catcc 0.1.8` + Zig 0.14.1 后端） |
-| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.5.2）+ `util.catc` + `ver.catc`（版本引擎） |
-| 二进制 | `catpm/catpm52`（v0.5.2，276,112 B）；`catpm5`（0.5.0）/`catpm4`/`catpm3`/`catpm2` 为旧版，MIT 许可 |
+| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.5.3）+ `util.catc` + `ver.catc`（版本引擎） |
+| 二进制 | `catpm/catpm53`（v0.5.3，283,328 B）；`catpm52`/`catpm5`/`catpm4`/`catpm3`/`catpm2` 为旧版，MIT 许可 |
 | 源定义 | `package.where`（apt sources.list 式多源清单，默认指向 catpm-registry 仓库） |
 | 源码形态 | 源码内置（vendoring）：包以源码安装进 `deps/`，catcc 单入口编译时传递展开 import |
 | 自更新 | `catpm self-update`（对标 `apt install apt`）——catpm 本体也是 registry 里的一个包 |
@@ -61,17 +61,17 @@ export PATH="$HOME/.local/bin:$PATH"
 fish_add_path ~/.local/bin
 ```
 
-然后 `catpm --version` 验证（应输出 `catpm 0.5.2 (for CatBase 0.1.8)`）。
+然后 `catpm --version` 验证（应输出 `catpm 0.5.3 (for CatBase 0.1.8)`）。
 
 ### 从源码构建
 
 需要 CatBase v0.1.8（`bin/catcc`、`conf/`、`runtime/`）：
 
 ```bash
-cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm52  # ~11 s
+cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm53  # ~12 s
 ```
 
-不想构建时直接用仓库里已编译的 `catpm/catpm52`（x86_64 Linux ELF）。
+不想构建时直接用仓库里已编译的 `catpm/catpm53`（x86_64 Linux ELF）。
 
 > 说明：安装脚本只是「下载 + 放对位置」，catpm 自身运行还依赖系统 `tar`/`sha256sum`/`curl`（包管理操作用）；`catpm --version`、`catpm sources` 等纯命令无这些也能跑。
 
@@ -179,7 +179,8 @@ def main() {
 | loganx | 0.1.0 | 带时间戳日志 | — |
 | **timex** | 0.1.0 | **v0.4 新增**：真实时间（`iso8601()`/`epoch()`/`stamp()`/`days_between()`，经 `exec(date)`） | stringx ^0.3.0 |
 | **randx** | 0.1.0 | **v0.4 新增**：种子化确定性 PRNG（`seed`/`between`/`below`/`pick`/`die6`；LCG + 乘法混叠，无位运算可用故纯 `+ * %` 实现） | timex ^0.1.0 |
-| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
+| **hellox** | 1.0.0 | **v0.5.3 新增**：首个预编译参考包（含 `bin/hellox` linux-x86_64 ELF） | — |
+| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 / 0.5.3 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
 
 本仓库（catpm）只保留 PM 本体：源码、二进制、`package.where`、README/PROTOCOL、安装脚本、日志。**v0.3 及以前放在本仓库的 `registry/`、`registry3/`、`registry-mirror/` 已整体删除（非归档）**——包体与索引全部迁移到 catpm-registry，raw 可达性实测 8/8 个 .cpkg + index.json 全 200（`logs/run4.log` [6/6]）。
 
@@ -222,15 +223,48 @@ catpm self-update @0.4.0     # 装指定版本（可降级；说明符同 add �
 3. **补历史 diff**：本规则生效前的相邻版本对同样补齐（`diffs/` 里现有 `v0.5.0..v0.5.1.diff`，其中 0.5.1 相对 0.5.0 仅版本号一行，如实反映）。首个按新规则发布的版本是 **v0.5.2**（`diffs/v0.5.1..v0.5.2.diff`，上一版快照取自 0.5.1 .cpkg 内源码——发布包是唯一可信快照源）。
 4. **registry 一次到位**：0.5.2 发布过程中实测到——registry 推送两次（中间版 cpkg + 最终版 cpkg）会让 raw CDN 在几分钟窗口内新 cpkg 配旧 index.json，self-update 的 sha256 门如实拦截（这正是它存在的意义）。规则：**源码定稿 → 打包 → 推送，只推一次**；误推中间版后立即补推最终版并等 CDN 一致再做 self-update 实测。
 
+## 5d. 预编译二进制包（v0.5.3）
+
+对标 apt 直接下 deb：包作者把编好的二进制放进 `bin/<name>`，`catpm pack` 打进 .cpkg，`publish` 在 index.json 登记平台指纹，装包方在干净目录（**无 catcc**）就能装出可直接执行的二进制。
+
+**包形态**：源码包 = `index.catc + catpm.json`；预编译包 = 再加 `bin/<name>`（并在 catpm.json 的 `files` 里列出）。hellox 1.0.0 是参考实现（linux-x86_64 ELF，21,344 B）。
+
+**index.json 平台标记**（字段可选，向后兼容）：
+
+```json
+"hellox": { "1.0.0": {
+    "path": "hellox/hellox-1.0.0.cpkg",
+    "sha256": "<整个 .cpkg 的哈希>",
+    "deps": {},
+    "bin": { "path": "bin/hellox", "os": "linux", "arch": "x86_64", "sha256": "<内层二进制哈希>" }
+} }
+```
+
+- **旧 catpm 读新索引**：`bin` 是未知字段，直接忽略，照常装（实测 0.5.2 装 hellox 成功，tar 保留 exec 位，二进制直接可跑）
+- **新 catpm 读旧索引**：无 `bin` 字段即纯源码路径，行为与 0.5.2 完全一致（实测剥掉字段后照常装）
+
+**安装时对 bin/<name> 做的三件事**（实测，`logs/run7.log`）：
+
+1. `chmod 0755` 恢复执行位
+2. **格式/架构校验**：ELF magic（`\x7fELF`，经 `ord()` 逐字节判定——CatBase 无 `\xNN` 转义且整型下标在二进制串上返回空，只有切片安全）+ e_machine（offset 18 LE u16：62=x86_64、183=aarch64…）与 `uname -m` 匹配；非 ELF 则必须是 `#!` shebang 脚本。**为什么拒绝「只是带执行位的文本」**：sh 的 ENOEXEC 回退会把它当脚本「跑」出输出，而 CatBase `exec()` 拿不到子进程退出码——「有输出」不能证明「能跑」，只能用确定性判据
+3. 冒烟：`--version`/`--help` 必须有输出
+
+校验失败（坏格式/错架构）**不中止安装**——源码部分照常落盘，二进制打上 `check FAILED` 标记由使用者定夺；整个 .cpkg 的 sha256 门（篡改即 exit 1、零接触）不变。
+
+**设计边界（如实记录）**：为什么不做 compile-on-install——CatBase 没有稳定 ABI 与链接器，唯一的消费模型是「单入口源码、import 在编译期展开」，所以预编译二进制只服务独立工具（catpm 本体、hellox），可 import 的库（mathx 等）保持源码 vendoring。
+
+**语言栏说明**：GitHub 语言栏只显示 [github/linguist](https://github.com/github/linguist) 已注册语言；CatBase 未注册，注册需上游 PR 且有真实使用量门槛（CONTRIBUTING.md 要求约 2000 文件/扩展，实测全 GitHub 仅 2 个 .catc 文件）——做不到就是做不到。本仓库用 `.gitattributes` 把 `.catc/.cat` 映射到最接近的已注册语言 Python（`linguist-language=Python`），脚本/日志/二进制标 vendored/generated；推送后实测语言栏从 `Shell 100%` 变为 `Python 81,206 B / Shell 5,340 B`。
+
 ## 6. 仓库布局
 
 ```
-catpm/src2/          PM 源码（catpm.cat v0.5.2 + ver.catc + util.catc + test_ver.cat 62 断言）
-catpm/catpm52        编译好的 x86_64 Linux 二进制（v0.5.2，276,112 B；catpm5/catpm4/catpm3/catpm2 为旧版）
-diffs/               发版前源码 diff（v0.5.0..v0.5.1.diff、v0.5.1..v0.5.2.diff；发版规则见 §5c）
+catpm/src2/          PM 源码（catpm.cat v0.5.3 + ver.catc + util.catc + test_ver.cat 62 断言）
+catpm/catpm53        编译好的 x86_64 Linux 二进制（v0.5.3，283,328 B；catpm52/catpm5/catpm4/catpm3/catpm2 为旧版）
+diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3；发版规则见 §5c）
 catpm/package.where  默认源清单（指向 catpm-registry 仓库 GitHub raw）
 install.sh           POSIX sh 安装器（sh/bash/zsh 通用，curl | sh 一键装）
 install.fish         fish 原生安装器（curl | source）
+.gitattributes       Linguist 映射（.catc/.cat→Python；脚本/日志标 vendored/generated，见 §5d）
 demo/                v0.1 演示项目；demo2/ 为 v0.2；demo_where*/ 为 v0.3（package.where）
 logs/build.log       catpm 构建记录（真实 catcc 命令、体积、耗时）
 logs/run.log         端到端演示记录（init→add→lock→编译→运行→remove）
@@ -242,6 +276,8 @@ logs/build5.log      v0.5 构建记录（44 断言 + catpm5 编译 + 0.5.1 构�
 logs/selfupdate5.log v0.5 自更新全场景实测：升级/幂等/降级/不可满足/三失败回退/live HTTPS
 logs/build6.log      v0.5.2 构建记录（62 断言 + catpm52 编译 + 打包发布）
 logs/run6.log        v0.5.2 打磨实测：三处修复复现验证 + self-update 全链路（0.5.0→0.5.1→0.5.2→降级）+ raw 验证
+logs/build7.log      v0.5.3 构建记录（62 断言 + catpm53 编译 + hellox 打包发布含 bin 指纹）
+logs/run7.log        v0.5.3 预编译包八段实测：安装链路/篡改拦截/坏格式拒绝/错架构拒绝/新旧互兼容/源码回归/self-update+HTTPS
 logs/syntax-probe.log CatBase v0.1.8 语法/标准库探针（含失败案例）
 scripts/e2e.sh       一键复现 build.log + run.log
 scripts/e2e_v2.sh    一键复现 v0.2 全生态
@@ -249,6 +285,7 @@ scripts/e2e_v3.sh    一键复现 v0.3 package.where 六场景
 scripts/e2e_v4.sh    一键复现 v0.4 全部六段（含安装器与 raw 可达性）
 scripts/e2e_v5.sh    一键复现 v0.5 自更新全场景（build5.log + selfupdate5.log）
 scripts/e2e_v6.sh    一键复现 v0.5.2 打磨发版（build6.log + run6.log）
+scripts/e2e_v7.sh    一键复现 v0.5.3 预编译包发版（build7.log + run7.log）
 PROTOCOL.md          四层协议规范（§4.0 package.where；§4.4 catpm-registry）
 LICENSE              MIT
 ```
@@ -287,6 +324,7 @@ bash scripts/e2e_v3.sh     # v0.3 package.where 六场景 → logs/build3.log + 
 bash scripts/e2e_v4.sh     # v0.4 六段全测 → logs/build4.log + run4.log
 bash scripts/e2e_v5.sh     # v0.5 自更新全场景 → logs/build5.log + selfupdate5.log
 bash scripts/e2e_v6.sh     # v0.5.2 打磨发版 → logs/build6.log + run6.log
+bash scripts/e2e_v7.sh     # v0.5.3 预编译包发版 → logs/build7.log + run7.log
 bash probe/run_probes.sh   # 语法探针套件 → logs/syntax-probe.log
 ```
 

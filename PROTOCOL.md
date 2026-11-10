@@ -145,6 +145,23 @@ CatBase v0.1.8 的编译模型是「单入口 `.cat` + import 传递展开、无
 - 包间依赖在包内写 `import ../<dep>/index.catc as <dep>`；
 - **别名一致性规则（catcc 硬约束）**：同一文件在全编译单元中必须只用一个别名（钻石依赖成立的前提，违反时报 `Cannot perform operation '+' on types 'str' and 'unknown'`）。约定：**别名一律等于包名**。
 
+### 3.4 预编译二进制 `bin/<name>`（v0.5.3）
+
+源码 vendoring 之外，包**可以**额外携带一个预编译可执行文件 `bin/<name>`（在 catpm.json 的 `files` 里列出，随 pack 进归档）：
+
+- **定位**：独立工具的交付形态（同 apt 直接下 deb）。由于 CatBase 无稳定 ABI/链接器、唯一消费模型是编译期 import 展开，`bin/` **不参与 import 体系**——可 import 的库仍必须是纯源码包。
+- **install 时**（v0.5.3 起）：解包后若存在 `deps/<name>/bin/<name>` →
+  1. `chmod 0755` 恢复执行位；
+  2. 格式/架构校验：ELF（magic `\x7fELF`，e_machine 与 `uname -m` 匹配：62=x86_64、183=aarch64、40=arm、3=x86）**或** `#!` shebang 脚本；两者皆非 → `check FAILED` 标记（安装不中止，源码部分照常落盘）。不采用「跑一下看有无输出」判定的原因：sh 的 ENOEXEC 回退会把任意带执行位的文本当脚本跑出输出，而 v0.1.8 的 `exec()` 拿不到子进程退出码；
+  3. 冒烟：`--version`/`--help` 至少一个有输出。
+- **publish 时**（v0.5.3 起）：index.json 该版本条目登记可选字段 `bin`：
+  ```json
+  "bin": { "path": "bin/<name>", "os": "linux", "arch": "x86_64", "sha256": "<内层二进制哈希>" }
+  ```
+  非 ELF（如 shebang 脚本）登记为 `"os":"any","arch":"any"`。
+- **向后兼容**：`bin` 为可选字段——旧 catpm 忽略未知键照常工作；新 catpm 对无 `bin` 字段的条目走纯源码路径（行为与 0.5.2 完全一致）。兼容性双向实测见 `logs/run7.log` [5/8][6/8]。
+- 归档整体的 sha256 门不受影响：篡改 .cpkg 任何字节 → MISMATCH → exit 1，零接触（`logs/run7.log` [2/8]）。
+
 ---
 
 ## 第 4 层：源层（source / registry）
@@ -211,6 +228,7 @@ https://raw.githubusercontent.com/u/r/main/registry    prio=1   pkg=mathx,loganx
 | `path` | 相对源根的 `.cpkg` 路径（远程源即 URL 后缀） |
 | `sha256` | 该 `.cpkg` 的 sha256，安装时强制校验 |
 | `deps` | 该版本的依赖说明符（内嵌副本，解析层无需下载包体即可全闭包解析） |
+| `bin` | **可选**（v0.5.3）：`{path, os, arch, sha256}` 预编译二进制指纹，详 §3.4；旧实现忽略、新实现容缺 |
 
 `catpm publish <dir>` 自动维护本地源的 `index.json`（读取新 `.cpkg` 的哈希 + 源清单的 deps，合并写入）。
 
