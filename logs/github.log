@@ -44,3 +44,36 @@ $ catcc main.cat -o app && ./app
 
 CONCLUSION: the GitHub repository is a fully working remote source; install from it
 verifies sha256 against index.json, caches, compiles and runs — after the final push.
+
+
+==================================================
+== LIVE USER-VIEW VERIFICATION v0.3 (2026-11-10) — GitHub-only files, fresh CDN state
+==================================================
+setup: /tmp/live_v3 contains ONLY catpm3 (binary) + package.where (downloaded from
+       https://github.com/monikalnbo/catpm — both files as a real user would get them)
+fix:   c78a90f force-added registry/loganx/loganx-0.1.0.cpkg (was caught by .gitignore
+       *.cpkg rule; a0c1b94 had shipped index.json without the archive)
+
+$ catpm3 add loganx          # pure remote source, no local registry anywhere
+catpm: added loganx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm/main/registry)
+catpm: resolved 3 package(s):
+  - loganx@0.1.0
+  - mathx@0.3.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  downloading loganx@0.1.0 <- .../registry/loganx/loganx-0.1.0.cpkg
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+$ catcc main.cat -o app && ./app
+Compilation successful.
+app: 23424 bytes
+== live v0.3: installed purely from package.where GitHub source ==
+loganx.tag('remote') =  [remote]
+loganx.tri(10) =  55
+mathx fib(10) =  55
+exit=0
+
+raw CDN propagation after c78a90f: index.json + loganx cpkg both 200 on first poll.
