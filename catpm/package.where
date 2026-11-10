@@ -1,0 +1,4 @@
+# catpm source list v1 (apt sources.list style)
+# <dir-or-URL> [prio=N] [pkg=name1,name2]
+# default: this repository's own registry on GitHub
+https://raw.githubusercontent.com/monikalnbo/catpm/main/registry

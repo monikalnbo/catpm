@@ -1,0 +1,14 @@
+# loganx 0.1.0 — standalone toy package for multi-source demos (no deps)
+LOGANX_VERSION: str = "0.1.0"
+
+def tag(s: str) -> str {
+    return "[" + s + "]"
+}
+
+def twice(n: int) -> int {
+    return n * 2
+}
+
+def tri(n: int) -> int {
+    return n * (n + 1) / 2
+}

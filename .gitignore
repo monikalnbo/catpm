@@ -1,5 +1,4 @@
+*.cpkg
+dist/
 deps/
 .catpm-cache/
-dist/
-*.o
-out/

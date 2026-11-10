@@ -144,8 +144,46 @@ CatBase v0.1.8 的编译模型是「单入口 `.cat` + import 传递展开、无
 
 ## 第 4 层：源层（source / registry）
 
-### 4.1 索引格式 `index.json`
+### 4.0 源定义文件 `package.where`（apt sources.list 式）
 
+包从哪来，不再绑死在代码或环境变量里，而由一个**用户可改写的源清单文件**声明。catpm 启动时按以下顺序查找（找到即止）：
+
+| 顺序 | 位置 | 用途 |
+|---|---|---|
+| 1 | `$CATPM_WHERE` 指向的文件 | 显式指定（CI、测试） |
+| 2 | `./package.where`（当前目录） | 项目级源配置 |
+| 3 | `<catpm 二进制所在目录>/package.where`（含上溯 2 级） | **默认：与 PM 同仓库** |
+| 4 | 都没有 → 回退 `CATPM_REGISTRY` → `./registry` | v0.2 单源兼容模式 |
+
+**文件格式**（一行一源，`#` 注释，空行忽略）：
+
+```
+# catpm source list v1 (apt sources.list style)
+# <dir-or-URL> [prio=N] [pkg=name1,name2]
+/abs/path/registry3                          prio=10
+./relative-registry                           prio=5
+https://raw.githubusercontent.com/u/r/main/registry    prio=1   pkg=mathx,loganx
+```
+
+| 字段 | 必填 | 语义 |
+|---|---|---|
+| `<dir-or-URL>` | 是 | 源地址。目录须以 `/`、`./`、`../` 开头；URL 须 `http(s)://` 开头。其他形式报错（exit 1） |
+| `prio=N` | 否（默认 0） | 源优先级，**越大越优先**。决定两件事：(a) 下载顺序——多源都有同一 name@ver 时按 prio 从高到低尝试；(b) 排序稳定性——prio 相同时按文件行序（稳定排序） |
+| `pkg=a,b` | 否（默认全部） | **源钉定（pinning）**：该源只参与列表内包名的解析与下载（apt pin 的简化版）；未列出的包视同该源不存在 |
+
+**拉包规则（实测）**：
+1. **版本候选 = 所有（未被 pin 排除的）可用源的并集**。解析器在并集上跑 `best_match`——`mathx 0.2.0/0.3.0@registry3 + 0.4.0@mirror` 并集后 `latest` → `0.4.0`。
+2. **下载按 prio 降序回退**：选定 name@ver 后，从含它的最高 prio 源拉取；该源失败（文件缺失/curl 出错）→ 警告并降级到下一含它的源；全失败 exit 1。
+3. **索引不可达 ≠ 致命**：某源 `index.json` 拉不到（目录不存在/URL 超时）→ 打警告跳过，其余源照常工作；**全部**不可达才 exit 1。
+4. **sha256 恒校验**：无论本地复制、远程下载还是缓存命中，都重算并与该源索引里的哈希比对。
+5. **格式错误立即报错（exit 1，带行号）**：地址形式非法、`prio=` 非非负整数、未知选项。重复源行打警告忽略。
+6. `CATPM_REGISTRY` 在找到 package.where 时被忽略（打提示），保持单一年度真相源。
+
+命令：`catpm sources` 列出所有已配置源（prio/kind/root/serves/status 一览，并实测可达性）。
+
+对照 apt：`package.where` ↔ `/etc/apt/sources.list`；`prio=` ↔ apt pin-priority；`pkg=` ↔ apt Pin（简化：只按包名，不支持版本表达式）。
+
+### 4.1 索引格式 `index.json`
 一个源 = 一个索引 + 一组 `.cpkg` 文件。索引是单文件 JSON：
 
 ```json
@@ -171,14 +209,16 @@ CatBase v0.1.8 的编译模型是「单入口 `.cat` + import 传递展开、无
 
 `catpm publish <dir>` 自动维护本地源的 `index.json`（读取新 `.cpkg` 的哈希 + 源清单的 deps，合并写入）。
 
-### 4.2 两种源
+### 4.2 两种源（在 package.where 里混用不限量）
 
 | | 本地目录源 | 远程 URL 源 |
 |---|---|---|
-| `CATPM_REGISTRY` | `/abs/path/registry` 或相对目录 | `https://host/.../registry`（`http://` 亦接受） |
+| 写在 package.where | `/abs/path/registry`、`./rel`、`../rel` | `https://host/.../registry`（`http://` 亦接受） |
 | 读索引 | 直接读 `<root>/index.json` | 下载 `<root>/index.json` |
 | 取包体 | 复制 `<root>/<path>` | 下载 `<root>/<path>` |
 | 发布 | `catpm publish <dir>` | 不支持命令内直接发布（推 git 仓库 + raw URL 即成源，见 §4.4） |
+
+多源时版本候选为**并集**、下载按 `prio` 回退、`pkg=` 钉定——见 §4.0。
 
 ### 4.3 下载流程与缓存
 
@@ -209,7 +249,9 @@ CatBase v0.1.8 的编译模型是「单入口 `.cat` + import 传递展开、无
 | 移除 | `pip uninstall pkg` | `npm uninstall pkg` | `catpm remove pkg`（自动清孤儿） |
 | 打包 | `python -m build` | `npm pack` | `catpm pack` |
 | 发布 | `twine upload` | `npm publish` | `catpm publish <dir>`（本地源） |
-| 固定源 | `-i https://pypi.org/simple` | `--registry` | `CATPM_REGISTRY=<dir\|URL>` |
+| 固定源 | `-i https://pypi.org/simple` | `--registry` | `package.where`（`CATPM_REGISTRY` 为单源兼容） |
+| 源清单/多源 | pip.conf `index-url`（单源） | `.npmrc`（单源） | **`package.where`** 多源清单（apt sources.list 式，§4.0） |
+| 查看源 | — | `npm config get registry` | `catpm sources`（含可达性检查） |
 | 锁文件 | （无标准） | `package-lock.json` | `catpm.lock` |
 
 语义差异（如实记录）：catpm 的 `add` 同时写清单并安装（npm 语义）；pip 的 `install` 对应 catpm 的 `install`。catpm 没有全局安装、没有虚拟环境概念——依赖永远装在项目内 `deps/`。

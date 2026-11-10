@@ -1,0 +1,168 @@
+
+==================================================
+== WHERE LOG v3 — package.where source list 2026-11-10 03:49:47Z
+==================================================
+catpm: catpm 0.3.0 (for CatBase 0.1.8)
+
+
+==================================================
+== [1/6] DEFAULT package.where (auto-found next to the binary)
+==================================================
+--- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where ---
+# catpm source list v1 (apt sources.list style)
+# <dir-or-URL> [prio=N] [pkg=name1,name2]
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3
+$ catpm sources
+catpm: sources from /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where
+  prio kind root                                        serves       status
+  0     dir  /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3(all)       ok
+exit=0
+$ catpm init && catpm add loganx
+catpm: added loganx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3)
+catpm: resolved 1 package(s):
+  - loganx@0.1.0
+catpm: installing into ./deps/
+  copying loganx@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3/loganx/loganx-0.1.0.cpkg
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm list
+installed packages in ./deps:
+  loganx  0.1.0
+
+==================================================
+== [2/6] USER REWRITES package.where -> switch source, zero code change
+==================================================
+--- edited /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where ---
+# switched to the GitHub raw source by editing one line
+https://raw.githubusercontent.com/monikalnbo/catpm/main/registry
+$ catpm sources
+catpm: sources from /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where
+  prio kind root                                        serves       status
+  0     url  https://raw.githubusercontent.com/monikalnbo/catpm/main/registry(all)       ok
+exit=0
+$ catpm init && catpm add 'mathx@^0.2.0'
+catpm: added mathx '^0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm/main/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  downloading mathx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/main/registry/mathx/mathx-0.2.0.cpkg
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  downloading stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/main/registry/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [3/6] MULTI-SOURCE: union versions + prio download order + pkg= pin
+==================================================
+--- edited /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where ---
+# two local sources: registry3 is the default, mirror has mathx 0.4.0
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3                 prio=10
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry-mirror           prio=5   pkg=mathx
+https://raw.githubusercontent.com/monikalnbo/catpm/main/registry                          prio=1
+$ catpm sources
+catpm: sources from /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where
+  prio kind root                                        serves       status
+  10    dir  /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3(all)       ok
+  5     dir  /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry-mirrormathx       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm/main/registry(all)       ok
+exit=0
+$ catpm add mathx   # union candidates 0.2.0/0.3.0/0.4.0 -> latest wins = 0.4.0 (from mirror)
+catpm: added mathx 'latest' to catpm.json (resolves to 0.4.0)
+catpm: resolving dependencies (source: 3 source(s): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3, /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry-mirror, https://raw.githubusercontent.com/monikalnbo/catpm/main/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.4.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  copying mathx@0.4.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry-mirror/mathx/mathx-0.4.0.cpkg
+  installed mathx@0.4.0 (sha256 ok) -> deps/mathx/index.catc
+  copying stringx@0.3.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm add loganx  # only in registry3
+catpm: added loganx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 3 source(s): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3, /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry-mirror, https://raw.githubusercontent.com/monikalnbo/catpm/main/registry)
+catpm: resolved 3 package(s):
+  - loganx@0.1.0
+  - mathx@0.4.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  copying loganx@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3/loganx/loganx-0.1.0.cpkg
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+  cached .catpm-cache/mathx/mathx-0.4.0.cpkg
+  installed mathx@0.4.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- catpm.lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+loganx 0.1.0
+mathx 0.4.0
+stringx 0.3.0
+
+==================================================
+== [4/6] UNREACHABLE SOURCE: warn + continue on the remaining one
+==================================================
+--- edited /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/package.where ---
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3-broken           prio=9
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3                  prio=5
+$ catpm add loganx   # first source unreachable -> warning, second serves it
+catpm: warning: source unreachable: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3-broken (no index.json)
+catpm: added loganx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: warning: source unreachable: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3-broken (no index.json)
+catpm: resolving dependencies (source: 2 source(s): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3-broken, /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3)
+catpm: resolved 1 package(s):
+  - loganx@0.1.0
+catpm: installing into ./deps/
+  copying loganx@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3/loganx/loganx-0.1.0.cpkg
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [5/6] ERROR PATHS: bad line, unreachable-only, junk prio
+==================================================
+--- package.where (bad address form) ---
+no-slash-or-scheme.example/pkgs
+$ catpm add loganx
+catpm: package.where:1: source must start with / ./ ../ http:// or https:// — got 'no-slash-or-scheme.example/pkgs'
+exit=1 (expect 1)
+--- package.where (unreachable only) ---
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3-gone
+$ catpm add loganx
+catpm: warning: source unreachable: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3-gone (no index.json)
+catpm: no reachable source (all failed; see warnings above)
+exit=1 (expect 1)
+--- package.where (junk prio) ---
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3  prio=high
+$ catpm add loganx
+catpm: package.where:1: prio must be a non-negative integer — got 'high'
+exit=1 (expect 1)
+--- package.where (unknown option) ---
+/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry3  color=red
+$ catpm add loganx
+catpm: package.where:1: unknown option 'color=red' (expected prio=N or pkg=a,b)
+exit=1 (expect 1)
+
+==================================================
+== [6/6] COMPILE + RUN an app built from package.where installs
+==================================================
+$ catcc main.cat -o app
+Compilation successful.
+app: 23952 bytes
+$ ./app
+== catpm v0.3 package.where demo ==
+mathx (mirror, pkg= pin)  0.4.0  fib(10)= 55
+mathx.collatz_steps(27) =  111
+loganx.tag('multi-source') =  [multi-source]
+loganx.tri(10) =  55
+exit=0
+
+END OF WHERE LOG v3

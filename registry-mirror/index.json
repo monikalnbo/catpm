@@ -1,0 +1,1 @@
+{"packages":{"mathx":{"0.4.0":{"sha256":"b775bb1c69eb9d34dd75427fb1a2f79cdf9d8e52342a60daf9a0f7f7f377c240","deps":{"stringx":"^0.3.0"},"path":"mathx/mathx-0.4.0.cpkg"}},"stringx":{"0.3.0":{"sha256":"d18d707dd4f1cc5a92b875f2d7bdb34a4a7e2d36db586861f0622e7c913035c1","deps":{},"path":"stringx/stringx-0.3.0.cpkg"}}}}

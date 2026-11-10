@@ -33,6 +33,57 @@ def get_str(src: dict[str, any], key: str, dflt: str) -> str {
     return s
 }
 
+# split on spaces, dropping empty tokens (handles runs of spaces / tabs
+# already normalized to spaces by the caller)
+def toks(s: str) -> list[str] {
+    out: list[str] = []
+    ps: list[str] = s.split(" ")
+    i: int = 0
+    while i < len(ps) {
+        if len(ps[i]) > 0 {
+            out.append(ps[i])
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# does comma-separated list lst contain name?  ("a,b,c" has b?)
+def csv_has(lst: str, name: str) -> bool {
+    if lst == "" {
+        return False
+    }
+    ps: list[str] = lst.split(",")
+    i: int = 0
+    while i < len(ps) {
+        if ps[i] == name {
+            return True
+        }
+        i = i + 1
+    }
+    return False
+}
+
+def list_has(lst: list[str], x: str) -> bool {
+    i: int = 0
+    while i < len(lst) {
+        if lst[i] == x {
+            return True
+        }
+        i = i + 1
+    }
+    return False
+}
+
+# left-justify s to width n (for the `sources` table)
+def pad(s: str, n: int) -> str {
+    out: str = s
+    while len(out) < n {
+        out = out + " "
+    }
+    return out
+}
+
 # lexicographic compare for ASCII strings: a > b?
 def str_greater(a: str, b: str) -> bool {
     n: int = len(a)

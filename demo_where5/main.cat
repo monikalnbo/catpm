@@ -1,0 +1,11 @@
+# demo_where5: everything installed via package.where multi-source rules
+import ./deps/mathx/index.catc as mathx
+import ./deps/loganx/index.catc as loganx
+
+def main() {
+    print("== catpm v0.3 package.where demo ==")
+    print("mathx (mirror, pkg= pin) ", mathx.MATHX_VERSION, " fib(10)=", mathx.fib(10))
+    print("mathx.collatz_steps(27) = ", mathx.collatz_steps(27))
+    print("loganx.tag('multi-source') = ", loganx.tag("multi-source"))
+    print("loganx.tri(10) = ", loganx.tri(10))
+}

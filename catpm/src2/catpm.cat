@@ -1,37 +1,44 @@
 # ============================================================
-# catpm v0.2 — dependency package manager for CatBase v0.1.8
+# catpm v0.3.0 — dependency package manager for CatBase v0.1.8
 # written in CatBase, compiled by catcc to a native binary.
 #
-# v0.2 adds (over v0.1):
+# v0.3 adds (over v0.2):
+#   - package.where source list (apt sources.list style):
+#       <source> [prio=N] [pkg=name1,name2]
+#     multiple sources, priority-ordered downloads, per-source
+#     package pinning, union version candidates across sources,
+#     per-source fallback on download failure.
+#     lookup chain: CATPM_WHERE -> ./package.where ->
+#       <catpm binary dir>/package.where (up 2 levels) ->
+#       legacy CATPM_REGISTRY / ./registry fallback
+#   - `catpm sources` command: show configured sources + status
+#
+# v0.2 (unchanged):
 #   - version specifiers: pkg@1.2.3 / ^1.2 / ~1.2 / >=1.0 / <2.0 /
 #     >x / <=x / latest  (resolved + locked per PROTOCOL.md layer 2)
-#   - `catpm lock`      : resolve + write lock WITHOUT installing
-#   - `catpm pack`      : pack cwd package -> dist/<name>-<ver>.cpkg
-#                         (tar.gz, protocol layer 3, sha256 recorded)
-#   - `catpm publish`   : copy .cpkg + manifest into a local registry
-#   - sources: local dir registry AND remote URL registry (curl via
-#     exec — builtin https is plaintext-TCP, see PROTOCOL.md layer 4)
+#   - `catpm lock` / `catpm pack` / `catpm publish`
 #   - download cache + sha256 verification (sha256sum via exec)
 #
 # project layout managed:
 #   catpm.json   manifest {"name","catpm","deps":{name:spec}}
 #   catpm.lock   resolved pins (protocol layer 2)
 #   deps/<name>/index.catc   vendored package sources
-#   .catpm-cache/<name>/<ver>/<name>-<ver>.cpkg   download cache
+#   .catpm-cache/<name>/<name>-<ver>.cpkg   download cache
 #
 # usage: catpm <command> [args]
 #   init / add <pkg[@spec]> / install / lock / list / remove / pack /
-#   publish <registry-dir> / --version
+#   publish <registry-dir> / sources / --version
 # ============================================================
 
 import ./util.catc as util
 import ./ver.catc as ver
 
-CATPM_VERSION: str = "0.2.0"
+CATPM_VERSION: str = "0.3.0"
 MANIFEST: str = "catpm.json"
 LOCKFILE: str = "catpm.lock"
 DEPSDIR: str = "deps"
 CACHEDIR: str = ".catpm-cache"
+WHEREFILE: str = "package.where"
 
 def main(args: list[str]) {
     if len(args) < 1 {
@@ -67,6 +74,8 @@ def main(args: list[str]) {
             return
         }
         cmd_publish(args[1])
+    } else if cmd == "sources" {
+        cmd_sources()
     } else if cmd == "--version" {
         print("catpm " + CATPM_VERSION + " (for CatBase 0.1.8)")
     } else {
@@ -85,38 +94,406 @@ def usage() {
     print("  remove <name>          remove a direct dependency and prune orphans")
     print("  pack                   pack cwd package -> dist/<name>-<ver>.cpkg")
     print("  publish <registry-dir> publish dist/*.cpkg into a local registry")
+    print("  sources                show configured sources (" + WHEREFILE + ")")
     print("  --version              show catpm version")
-    print("sources: CATPM_REGISTRY=<dir|URL>  (default ./registry)")
+    print("sources: " + WHEREFILE + " (./ or next to the catpm binary; or CATPM_WHERE=<path>)")
+    print("  line format: <dir|URL> [prio=N] [pkg=name1,name2]   (apt sources.list style)")
+    print("  without " + WHEREFILE + ": CATPM_REGISTRY=<dir|URL>  (default ./registry)")
 }
 
-# ---------- environment ----------
+# ============================================================
+# package.where — source list (protocol layer 4, see PROTOCOL.md 4.5)
+# ============================================================
+# state dict returned by load_sources():
+#   "where"  str    path of the where-file used ("" = legacy fallback)
+#   "roots"  list[str]  sources in download order (prio desc, stable)
+#   "prio"   dict[str,any]  root -> int priority
+#   "pkgs"   dict[str,any]  root -> csv pin ("" = serves every package)
+# after fetch_all(st) also:
+#   "idxs"   dict[str,any]  root -> parsed index.json
+#   "ok"     list[str]     reachable roots (same order as roots)
+#   "warn"   list[str]      warnings collected while fetching
 
-def registry_root() -> str {
-    env: str = getenv("CATPM_REGISTRY")
+def self_bindir() -> str {
+    d: str = exec("dirname $(readlink -f /proc/$PPID/exe)")
+    return d.strip()
+}
+
+def find_where() -> list[str] {
+    out: list[str] = []
+    env: str = getenv("CATPM_WHERE")
     if env != "" {
-        return env
+        if not file_exists(env) {
+            print("catpm: CATPM_WHERE=" + env + " but that file does not exist")
+            exit_now(1)
+        }
+        out.append(env)
+        return out
     }
-    return "registry"
+    if file_exists("./" + WHEREFILE) {
+        out.append("./" + WHEREFILE)
+        return out
+    }
+    bd: str = self_bindir()
+    cands: list[str] = []
+    cands.append(bd + "/" + WHEREFILE)
+    cands.append(bd + "/../" + WHEREFILE)
+    cands.append(bd + "/../../" + WHEREFILE)
+    i: int = 0
+    while i < len(cands) {
+        if file_exists(cands[i]) {
+            out.append(cands[i])
+            return out
+        }
+        i = i + 1
+    }
+    return out
 }
 
-def registry_is_url() -> bool {
-    r: str = registry_root()
-    if r.startswith("http://") or r.startswith("https://") {
+def all_digits(s: str) -> bool {
+    if len(s) == 0 {
+        return False
+    }
+    i: int = 0
+    while i < len(s) {
+        if not ver.is_digit(s[i:i+1]) {
+            return False
+        }
+        i = i + 1
+    }
+    return True
+}
+
+# does list[str] contain r?
+def roots_has(lst: list[str], r: str) -> bool {
+    i: int = 0
+    while i < len(lst) {
+        if lst[i] == r {
+            return True
+        }
+        i = i + 1
+    }
+    return False
+}
+
+def valid_source_addr(root: str) -> bool {
+    if root.startswith("http://") {
+        return True
+    }
+    if root.startswith("https://") {
+        return True
+    }
+    if root[0:1] == "/" {
+        return True
+    }
+    if root.startswith("./") {
+        return True
+    }
+    if root.startswith("../") {
         return True
     }
     return False
 }
 
-def cache_dir() -> str {
-    return CACHEDIR
+def parse_where(path: str) -> dict[str, any] {
+    st: dict[str, any] = {}
+    st.put("where", path)
+    roots: list[str] = []
+    prio: dict[str, any] = {}
+    pkgs: dict[str, any] = {}
+    seen: dict[str, any] = {}
+    f: File = file(path, "r")
+    content: str = f.read()
+    f.close()
+    lines: list[str] = content.split("\n")
+    i: int = 0
+    while i < len(lines) {
+        t: str = lines[i].replace("\t", " ")
+        u: str = t.replace("\r", " ")
+        ln: str = u.strip()
+        if ln != "" {
+            if ln[0:1] != "#" {
+                toks: list[str] = util.toks(ln)
+                root: str = toks[0]
+                lno: str = str(i + 1)
+                if not valid_source_addr(root) {
+                    print("catpm: " + WHEREFILE + ":" + lno + ": source must start with / ./ ../ http:// or https:// — got '" + root + "'")
+                    exit_now(1)
+                }
+                p: int = 0
+                pin: str = ""
+                j: int = 1
+                while j < len(toks) {
+                    tok: str = toks[j]
+                    if tok.startswith("prio=") {
+                        pvstr: str = tok[5:len(tok)]
+                        if not all_digits(pvstr) {
+                            print("catpm: " + WHEREFILE + ":" + lno + ": prio must be a non-negative integer — got '" + pvstr + "'")
+                            exit_now(1)
+                        }
+                        p = int(pvstr)
+                    } else if tok.startswith("pkg=") {
+                        pin = tok[4:len(tok)]
+                    } else {
+                        print("catpm: " + WHEREFILE + ":" + lno + ": unknown option '" + tok + "' (expected prio=N or pkg=a,b)")
+                        exit_now(1)
+                    }
+                    j = j + 1
+                }
+                if seen.contains(root) {
+                    print("catpm: warning: " + WHEREFILE + ":" + lno + ": duplicate source '" + root + "' ignored")
+                } else {
+                    seen.put(root, 1)
+                    roots.append(root)
+                    prio.put(root, p)
+                    pkgs.put(root, pin)
+                }
+            }
+        }
+        i = i + 1
+    }
+    if len(roots) == 0 {
+        print("catpm: " + WHEREFILE + " has no source lines: " + path)
+        print("  a line looks like:  <dir-or-URL>  [prio=N] [pkg=a,b]   (see PROTOCOL.md)")
+        exit_now(1)
+    }
+    st.put("roots", roots)
+    st.put("prio", prio)
+    st.put("pkgs", pkgs)
+    # stable sort by prio desc (insertion sort on parallel arrays)
+    pv: list[int] = []
+    i2: int = 0
+    while i2 < len(roots) {
+        pva: any = prio.get(str(roots[i2]), 0)
+        pv.append(int(pva))
+        i2 = i2 + 1
+    }
+    a: int = 1
+    while a < len(roots) {
+        key: str = roots[a]
+        keyp: int = pv[a]
+        b: int = a - 1
+        moved: bool = True
+        while b >= 0 and moved {
+            prevp: int = pv[b]
+            if prevp < keyp {
+                roots[b + 1] = roots[b]
+                pv[b + 1] = pv[b]
+                b = b - 1
+            } else {
+                moved = False
+            }
+        }
+        roots[b + 1] = key
+        pv[b + 1] = keyp
+        a = a + 1
+    }
+    return st
+}
+
+# legacy v0.2 fallback: single implicit source, no where-file
+def implicit_state() -> dict[str, any] {
+    st: dict[str, any] = {}
+    st.put("where", "")
+    root: str = getenv("CATPM_REGISTRY")
+    if root == "" {
+        root = "registry"
+    }
+    roots: list[str] = []
+    roots.append(root)
+    prio: dict[str, any] = {}
+    prio.put(root, 0)
+    pkgs: dict[str, any] = {}
+    pkgs.put(root, "")
+    st.put("roots", roots)
+    st.put("prio", prio)
+    st.put("pkgs", pkgs)
+    return st
+}
+
+def load_sources() -> dict[str, any] {
+    found: list[str] = find_where()
+    st: dict[str, any] = {}
+    if len(found) > 0 {
+        st = parse_where(found[0])
+        if getenv("CATPM_REGISTRY") != "" {
+            print("catpm: note: ignoring CATPM_REGISTRY (" + WHEREFILE + " found: " + found[0] + ")")
+        }
+    } else {
+        st = implicit_state()
+    }
+    return st
+}
+
+def kind_of(root: str) -> str {
+    if root.startswith("http://") or root.startswith("https://") {
+        return "url"
+    }
+    return "dir"
+}
+
+# fetch index.json from every source; unreachable ones warn + skip
+def fetch_all(st: dict[str, any]) {
+    idxs: dict[str, any] = {}
+    ok: list[str] = []
+    warns: list[str] = []
+    rav: any = st.get("roots", None)
+    roots: list[str] = rav
+    i: int = 0
+    while i < len(roots) {
+        r: str = str(roots[i])
+        if kind_of(r) == "url" {
+            body: str = http_fetch_soft(r + "/index.json")
+            if body == "" {
+                warns.append("source unreachable: " + r)
+            } else {
+                b: str = body.strip()
+                if not b.startswith("{") {
+                    warns.append("invalid index at " + r + " (not a JSON object)")
+                } else {
+                    idxs.put(r, json_loads(b))
+                    ok.append(r)
+                }
+            }
+        } else {
+            p: str = r + "/index.json"
+            if not file_exists(p) {
+                warns.append("source unreachable: " + r + " (no index.json)")
+            } else {
+                f: File = file(p, "r")
+                c: str = f.read()
+                f.close()
+                cs: str = c.strip()
+                if not cs.startswith("{") {
+                    warns.append("invalid index at " + r + " (not a JSON object)")
+                } else {
+                    idxs.put(r, json_loads(cs))
+                    ok.append(r)
+                }
+            }
+        }
+        i = i + 1
+    }
+    j: int = 0
+    while j < len(warns) {
+        print("catpm: warning: " + warns[j])
+        j = j + 1
+    }
+    if len(ok) == 0 {
+        print("catpm: no reachable source (all failed; see warnings above)")
+        exit_now(1)
+    }
+    st.put("idxs", idxs)
+    st.put("ok", ok)
+    st.put("warn", warns)
+}
+
+def source_summary(st: dict[str, any]) -> str {
+    rav: any = st.get("roots", None)
+    roots: list[str] = rav
+    out: str = ""
+    i: int = 0
+    while i < len(roots) {
+        if i > 0 {
+            out = out + ", "
+        }
+        out = out + str(roots[i])
+        i = i + 1
+    }
+    if len(roots) > 1 {
+        out = str(len(roots)) + " source(s): " + out
+    }
+    return out
+}
+
+def where_path_of(st: dict[str, any]) -> str {
+    return str(st.get("where", ""))
+}
+
+# ---------- merged multi-source view (pin-filtered) ----------
+# returns: dict version -> list[str] roots having that version, in prio order
+
+def merged_versions(st: dict[str, any], name: str) -> dict[str, any] {
+    out: dict[str, any] = {}
+    ia: any = st.get("idxs", None)
+    idxs: dict[str, any] = ia
+    oa: any = st.get("ok", None)
+    ok: list[str] = oa
+    pa: any = st.get("pkgs", None)
+    pkgs: dict[str, any] = pa
+    i: int = 0
+    while i < len(ok) {
+        r: str = ok[i]
+        pin: str = str(pkgs.get(r, ""))
+        if pin != "" {
+            if not util.csv_has(pin, name) {
+                i = i + 1
+                continue
+            }
+        }
+        iv: any = idxs.get(r, None)
+        if iv is None {
+            i = i + 1
+            continue
+        }
+        idxd: dict[str, any] = iv
+        vs: dict[str, any] = index_versions(idxd, name)
+        vks: list[str] = vs.keys()
+        j: int = 0
+        while j < len(vks) {
+            v: str = vks[j]
+            if out.contains(v) {
+                cv: any = out.get(v, None)
+                cur: list[str] = cv
+                cur.append(r)
+                out.put(v, cur)
+            } else {
+                nl: list[str] = []
+                nl.append(r)
+                out.put(v, nl)
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+def merged_searched(st: dict[str, any]) -> str {
+    oa: any = st.get("ok", None)
+    ok: list[str] = oa
+    out: str = ""
+    i: int = 0
+    while i < len(ok) {
+        if i > 0 {
+            out = out + ", "
+        }
+        out = out + ok[i]
+        i = i + 1
+    }
+    return out
 }
 
 # ---------- shell helpers (exec captures stdout) ----------
 # exec(cmd) always exits 0 in the parent; a failing child is signalled by
 # writing its rc to /tmp/catpm_rc from within the sh script itself.
 
-def shell_quote(s: str) -> str {
-    return "'" + s.replace("'", "'\\''") + "'"
+def sh_rc(cmdline: str) -> int {
+    rcfile: str = "/tmp/catpm_rc"
+    if file_exists(rcfile) {
+        delete_file(rcfile)
+    }
+    inner: str = cmdline.replace("'", "'\\''")
+    full: str = "sh -c '" + inner + " > /dev/null 2>&1'; rcode=$?; if [ $rcode -ne 0 ]; then echo $rcode > " + rcfile + "; fi"
+    exec(full)
+    if file_exists(rcfile) {
+        f: File = file(rcfile, "r")
+        c: str = f.read().strip()
+        f.close()
+        delete_file(rcfile)
+        return int(c)
+    }
+    return 0
 }
 
 # run a shell command; on nonzero exit print stderr and die
@@ -150,6 +527,41 @@ def sh_die(cmdline: str, what: str) {
     if file_exists(tmp) {
         delete_file(tmp)
     }
+}
+
+# ---------- http fetch (curl via exec; builtin https is plaintext, probe p22) ----------
+
+def http_fetch_soft(url: str) -> str {
+    tmp: str = "/tmp/catpm_fetch_body"
+    rc: int = sh_rc("curl -sS --max-time 60 -f -L -o " + tmp + " '" + url + "'")
+    if rc != 0 {
+        return ""
+    }
+    if not file_exists(tmp) {
+        return ""
+    }
+    f: File = file(tmp, "r")
+    body: str = f.read()
+    f.close()
+    delete_file(tmp)
+    return body
+}
+
+def http_download_soft(url: str, dst: str) -> int {
+    return sh_rc("curl -sS --max-time 300 -f -L -o '" + dst + "' '" + url + "'")
+}
+
+# ---------- sha256 (sha256sum via exec) ----------
+
+def sha256_of(path: str) -> str {
+    out: str = exec("sha256sum '" + path + "'")
+    # "hex  path"
+    sp: int = out.find(" ")
+    if sp < 0 {
+        print("catpm: cannot hash " + path)
+        exit_now(1)
+    }
+    return out[0:sp]
 }
 
 # ---------- manifest (protocol layer 1) ----------
@@ -188,34 +600,10 @@ def manifest_version(m: dict[str, any]) -> str {
     return util.get_str(m, "version", "0.1.0")
 }
 
-# ---------- registry index access (protocol layer 4) ----------
-# index.json format (same for local dir and remote URL source):
+# ---------- single index access (same schema at every source) ----------
+# index.json format (identical for local dir and remote URL sources):
 #   {"packages": {"<name>": {"<version>": {"path": "<rel>", "sha256": "<hex>"}}}}
-# local dir: index.json read from disk
-# remote URL: index.json fetched from <root>/index.json via curl
 
-def fetch_index() -> dict[str, any] {
-    idx: dict[str, any] = {}
-    root: str = registry_root()
-    if registry_is_url() {
-        body: str = http_fetch(root + "/index.json")
-        idx = json_loads(body)
-    } else {
-        p: str = root + "/index.json"
-        if not file_exists(p) {
-            print("catpm: registry index not found: " + p)
-            print("  (a registry source is a directory with index.json; see PROTOCOL.md)")
-            exit_now(1)
-        }
-        f: File = file(p, "r")
-        content: str = f.read()
-        f.close()
-        idx = json_loads(content)
-    }
-    return idx
-}
-
-# versions dict for a package from the index: {"ver": {"path":..,"sha256":..}}
 def index_versions(idx: dict[str, any], name: str) -> dict[str, any] {
     pkgs: dict[str, any] = util.get_dict(idx, "packages")
     if not pkgs.contains(name) {
@@ -238,42 +626,12 @@ def index_entry(idx: dict[str, any], name: str, v: str) -> dict[str, any] {
     return util.get_dict(vs, v)
 }
 
-# ---------- http fetch (curl via exec; builtin https is plaintext, probe p22) ----------
-
-def http_fetch(url: str) -> str {
-    tmp: str = "/tmp/catpm_fetch_body"
-    sh_die("curl -sS --max-time 60 -f -L -o " + tmp + " '" + url + "'", "fetch " + url)
-    f: File = file(tmp, "r")
-    body: str = f.read()
-    f.close()
-    delete_file(tmp)
-    return body
-}
-
-def http_download(url: str, dst: str) {
-    sh_die("curl -sS --max-time 300 -f -L -o '" + dst + "' '" + url + "'", "download " + url)
-}
-
-# ---------- sha256 (sha256sum via exec) ----------
-
-def sha256_of(path: str) -> str {
-    out: str = exec("sha256sum '" + path + "'")
-    # "hex  path"
-    sp: int = out.find(" ")
-    if sp < 0 {
-        print("catpm: cannot hash " + path)
-        exit_now(1)
-    }
-    return out[0:sp]
-}
-
 # ---------- resolution (protocol layer 2) ----------
-# BFS over index.json; each package name resolved once, FIRST WINS.
-# resolved: name -> pinned version; order: stable BFS order.
+# BFS over the merged multi-source view; each package name resolved once,
+# FIRST WINS. Candidates = union of versions across all (pin-allowed) sources.
 
-def resolve_all(direct: dict[str, str], resolved: dict[str, str], order: list[str]) -> list[str] {
+def resolve_all(direct: dict[str, str], resolved: dict[str, str], order: list[str], st: dict[str, any]) -> list[str] {
     warnings: list[str] = []
-    idx: dict[str, any] = fetch_index()
     queue: list[str] = []
     ks: list[str] = direct.keys()
     i: int = 0
@@ -287,9 +645,11 @@ def resolve_all(direct: dict[str, str], resolved: dict[str, str], order: list[st
         name: str = queue[qi]
         qi = qi + 1
         spec: str = resolved[name]
-        cands: list[str] = index_list_versions(idx, name)
+        vers: dict[str, any] = merged_versions(st, name)
+        cands: list[str] = vers.keys()
         if len(cands) == 0 {
-            print("catpm: package not found in registry: " + name + " (source: " + registry_root() + ")")
+            print("catpm: package not found in any source: " + name)
+            print("  searched: " + merged_searched(st))
             exit_now(1)
         }
         bestv: str = ver.best_match(cands, spec)
@@ -299,8 +659,24 @@ def resolve_all(direct: dict[str, str], resolved: dict[str, str], order: list[st
         }
         resolved.put(name, bestv)
         order.append(name + "@" + bestv)
-        # transitive deps from the package manifest inside the index entry
-        ent: dict[str, any] = index_entry(idx, name, bestv)
+        # transitive deps: from the entry at the first source that has name@bestv
+        rav: any = vers.get(bestv, None)
+        roots_any: list[str] = rav
+        ia: any = st.get("idxs", None)
+        idxs: dict[str, any] = ia
+        ent: dict[str, any] = {}
+        if roots_any is None {
+            ent = {}
+        } else {
+            # index_entry against a single index; rebuild from first root
+            iv: any = idxs.get(roots_any[0], None)
+            if iv is None {
+                ent = {}
+            } else {
+                idxd: dict[str, any] = iv
+                ent = index_entry(idxd, name, bestv)
+            }
+        }
         deps: dict[str, any] = util.get_dict(ent, "deps")
         dk: list[str] = deps.keys()
         j: int = 0
@@ -336,36 +712,77 @@ def join_versions(vs: list[str]) -> str {
 }
 
 # ---------- install (protocol layer 3+4: fetch cpkg, verify, unpack) ----------
+# tries the sources that have name@version in priority order; a source that
+# fails (missing file / download error) is skipped with a notice.
 
-def install_one(idx: dict[str, any], name: str, version: str) {
-    ent: dict[str, any] = index_entry(idx, name, version)
-    rel: str = util.get_str(ent, "path", "")
-    want_sha: str = util.get_str(ent, "sha256", "")
-    if rel == "" {
-        print("catpm: index entry has no path for " + name + "@" + version)
+def install_one(st: dict[str, any], name: str, version: str) {
+    ia: any = st.get("idxs", None)
+    idxs: dict[str, any] = ia
+    vers: dict[str, any] = merged_versions(st, name)
+    if not vers.contains(version) {
+        print("catpm: " + name + "@" + version + " not found in any source")
+        print("  searched: " + merged_searched(st))
         exit_now(1)
     }
-    root: str = registry_root()
+    rv: any = vers.get(version, None)
+    roots_any: list[str] = rv
+    rel: str = ""
+    want_sha: str = ""
+    gotit: bool = False
     # cache path
     cdir: str = CACHEDIR + "/" + name
     mkdir(CACHEDIR)
     mkdir(cdir)
     cpkg: str = cdir + "/" + name + "-" + version + ".cpkg"
-    if not file_exists(cpkg) {
-        if registry_is_url() {
-            url: str = root + "/" + rel
-            print("  downloading " + name + "@" + version + " <- " + url)
-            http_download(url, cpkg)
-        } else {
-            src: str = root + "/" + rel
-            if not file_exists(src) {
-                print("catpm: registry file missing: " + src)
-                exit_now(1)
-            }
-            copy_file(src, cpkg)
+    k: int = 0
+    while k < len(roots_any) {
+        r: str = roots_any[k]
+        iv: any = idxs.get(r, None)
+        if iv is None {
+            k = k + 1
+            continue
         }
-    } else {
-        print("  cached " + cpkg)
+        idxd: dict[str, any] = iv
+        ent: dict[str, any] = index_entry(idxd, name, version)
+        rel = util.get_str(ent, "path", "")
+        want_sha = util.get_str(ent, "sha256", "")
+        if rel == "" {
+            print("  source " + r + " has no path for " + name + "@" + version + ", trying next")
+            k = k + 1
+            continue
+        }
+        if not file_exists(cpkg) {
+            if kind_of(r) == "url" {
+                url: str = r + "/" + rel
+                print("  downloading " + name + "@" + version + " <- " + url)
+                rc: int = http_download_soft(url, cpkg)
+                if rc != 0 {
+                    print("  source " + r + " failed (curl exit " + str(rc) + "), trying next")
+                    if file_exists(cpkg) {
+                        delete_file(cpkg)
+                    }
+                    k = k + 1
+                    continue
+                }
+            } else {
+                src: str = r + "/" + rel
+                if not file_exists(src) {
+                    print("  source " + r + " missing file " + src + ", trying next")
+                    k = k + 1
+                    continue
+                }
+                print("  copying " + name + "@" + version + " <- " + src)
+                copy_file(src, cpkg)
+            }
+        } else {
+            print("  cached " + cpkg)
+        }
+        gotit = True
+        break
+    }
+    if not gotit {
+        print("catpm: all sources failed to provide " + name + "@" + version)
+        exit_now(1)
     }
     got: str = sha256_of(cpkg)
     if want_sha != "" and got != want_sha {
@@ -461,11 +878,14 @@ def cmd_add(spec_str: str) {
     parts: list[str] = ver.split_pkg(spec_str)
     name: str = parts[0]
     spec: str = parts[1]
-    # validate against the registry BEFORE touching the manifest
-    idx: dict[str, any] = fetch_index()
-    cands: list[str] = index_list_versions(idx, name)
+    # validate against the sources BEFORE touching the manifest
+    st: dict[str, any] = load_sources()
+    fetch_all(st)
+    vers: dict[str, any] = merged_versions(st, name)
+    cands: list[str] = vers.keys()
     if len(cands) == 0 {
-        print("catpm: package not found in registry: " + name + " (source: " + registry_root() + ")")
+        print("catpm: package not found in any source: " + name)
+        print("  searched: " + merged_searched(st))
         exit_now(1)
     }
     bestv: str = ver.best_match(cands, spec)
@@ -500,10 +920,12 @@ def cmd_lock() {
         print("catpm: no dependencies in " + MANIFEST)
         exit_now(1)
     }
-    print("catpm: resolving (source: " + registry_root() + ")")
+    st: dict[str, any] = load_sources()
+    fetch_all(st)
+    print("catpm: resolving (source: " + source_summary(st) + ")")
     resolved: dict[str, str] = {}
     order: list[str] = []
-    warnings: list[str] = resolve_all(direct, resolved, order)
+    warnings: list[str] = resolve_all(direct, resolved, order, st)
     write_lock(order, warnings)
     print("catpm: wrote " + LOCKFILE + ":")
     i: int = 0
@@ -542,10 +964,12 @@ def do_install() {
         prune()
         return
     }
-    print("catpm: resolving dependencies (source: " + registry_root() + ")")
+    st: dict[str, any] = load_sources()
+    fetch_all(st)
+    print("catpm: resolving dependencies (source: " + source_summary(st) + ")")
     resolved: dict[str, str] = {}
     order: list[str] = []
-    warnings: list[str] = resolve_all(direct, resolved, order)
+    warnings: list[str] = resolve_all(direct, resolved, order, st)
     print("catpm: resolved " + str(len(order)) + " package(s):")
     j: int = 0
     while j < len(order) {
@@ -557,16 +981,53 @@ def do_install() {
         print("  ! conflict " + warnings[k])
         k = k + 1
     }
-    idx: dict[str, any] = fetch_index()
     print("catpm: installing into ./" + DEPSDIR + "/")
     j = 0
     while j < len(order) {
         pair: list[str] = order[j].split("@")
-        install_one(idx, pair[0], pair[1])
+        install_one(st, pair[0], pair[1])
         j = j + 1
     }
     write_lock(order, warnings)
     print("catpm: wrote " + LOCKFILE)
+}
+
+def cmd_sources() {
+    st: dict[str, any] = load_sources()
+    w: str = where_path_of(st)
+    if w == "" {
+        print("catpm: no " + WHEREFILE + " found; implicit single source (CATPM_REGISTRY or ./registry)")
+    } else {
+        print("catpm: sources from " + w)
+    }
+    rav: any = st.get("roots", None)
+    roots: list[str] = rav
+    pa: any = st.get("prio", None)
+    prio: dict[str, any] = pa
+    ka: any = st.get("pkgs", None)
+    pkgs: dict[str, any] = ka
+    # reachability check
+    fetch_all(st)
+    oa: any = st.get("ok", None)
+    ok: list[str] = oa
+    print("  prio kind root                                        serves       status")
+    i: int = 0
+    while i < len(roots) {
+        r: str = roots[i]
+        pv: any = prio.get(r, 0)
+        p: str = util.pad(str(int(pv)), 5) + " "
+        kd: str = util.pad(kind_of(r), 4) + " "
+        pin: str = str(pkgs.get(r, ""))
+        if pin == "" {
+            pin = "(all)"
+        }
+        status: str = "ok"
+        if not roots_has(ok, r) {
+            status = "UNREACHABLE"
+        }
+        print("  " + p + kd + util.pad(r, 43) + util.pad(pin, 12) + status)
+        i = i + 1
+    }
 }
 
 def cmd_list() {
