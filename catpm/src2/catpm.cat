@@ -49,7 +49,7 @@
 import ./util.catc as util
 import ./ver.catc as ver
 
-CATPM_VERSION: str = "0.4.0"
+CATPM_VERSION: str = "0.5.0"
 
 import ./util.catc as util
 import ./ver.catc as ver
@@ -100,6 +100,12 @@ def main(args: list[str]) {
         cmd_publish(args[1])
     } else if cmd == "sources" {
         cmd_sources()
+    } else if cmd == "self-update" {
+        if len(args) < 2 {
+            cmd_self_update("latest")
+        } else {
+            cmd_self_update(args[1])
+        }
     } else if cmd == "--version" {
         print("catpm " + CATPM_VERSION + " (for CatBase 0.1.8)")
     } else {
@@ -121,6 +127,7 @@ def usage() {
     print("  pack                   pack cwd package -> dist/<name>-<ver>.cpkg")
     print("  publish <registry-dir> publish dist/*.cpkg into a local registry")
     print("  sources                show configured sources (" + WHEREFILE + ")")
+    print("  self-update [@spec]    update the catpm binary itself (like 'apt install apt')")
     print("  --version              show catpm version")
     print("sources: " + WHEREFILE + " (./ or next to the catpm binary; or CATPM_WHERE=<path>)")
     print("  line format: <dir|URL> [prio=N] [pkg=name1,name2]   (apt sources.list style)")
@@ -1162,6 +1169,161 @@ def cmd_sources() {
         print("  " + p + kd + util.pad(r, 43) + util.pad(pin, 12) + status)
         i = i + 1
     }
+}
+
+# ============================================================
+# self-update — update the catpm binary itself (like 'apt install apt').
+# catpm is a normal package in the registry (name "catpm"); its .cpkg
+# carries the prebuilt binary at bin/catpm. Atomicity:
+#   1. resolve latest (or @spec) from the package.where sources
+#   2. download + sha256-check into a staging path, NOT over the live file
+#   3. run "<staging> --version" and require it to print the target
+#      version BEFORE replacing anything (a broken download can never
+#      replace a working binary)
+#   4. only then mv (rename = atomic) staging -> live path
+# Any failure deletes the staging file and exits 1; the old binary is
+# untouched throughout.
+# ============================================================
+
+def cmd_self_update(spec_in: str) {
+    SELF_NAME: str = "catpm"
+    # accept both 'self-update' and 'self-update @0.4.0' (leading @ optional)
+    spec: str = spec_in
+    if spec.startswith("@") {
+        spec = spec[1:len(spec)]
+    }
+    print("catpm: current version " + CATPM_VERSION)
+    bd: str = self_bindir()
+    live: str = bd + "/catpm"
+    if not file_exists(live) {
+        # e.g. run from a build dir where the binary isn't named catpm
+        print("catpm: self path not found: " + live)
+        print("  self-update needs the binary to be installed as 'catpm'")
+        exit_now(1)
+    }
+    st: dict[str, any] = load_sources()
+    fetch_all(st)
+    vers: dict[str, any] = merged_versions(st, SELF_NAME)
+    cands: list[str] = vers.keys()
+    if len(cands) == 0 {
+        print("catpm: package 'catpm' not found in any source (self-update needs")
+        print("  the catpm package published to one of your sources)")
+        print("  searched: " + merged_searched(st))
+        exit_now(1)
+    }
+    target: str = ver.best_match(cands, spec)
+    if target == "" {
+        print("catpm: no catpm version satisfies '" + spec + "' (available: " + join_versions(cands) + ")")
+        exit_now(1)
+    }
+    print("catpm: target version  " + target)
+    if target == CATPM_VERSION {
+        print("catpm: already up to date")
+        return
+    }
+    # download the catpm package cpkg into the cache (same path rules as install_one)
+    ia: any = st.get("idxs", None)
+    idxs: dict[str, any] = ia
+    rv: any = vers.get(target, None)
+    roots_any: list[str] = rv
+    rel: str = ""
+    want_sha: str = ""
+    cpkg: str = ""
+    k: int = 0
+    gotit: bool = False
+    while k < len(roots_any) {
+        r: str = roots_any[k]
+        iv: any = idxs.get(r, None)
+        if iv is None {
+            k = k + 1
+            continue
+        }
+        idxd: dict[str, any] = iv
+        ent: dict[str, any] = index_entry(idxd, SELF_NAME, target)
+        rel = util.get_str(ent, "path", "")
+        want_sha = util.get_str(ent, "sha256", "")
+        if rel == "" {
+            k = k + 1
+            continue
+        }
+        cdir: str = CACHEDIR + "/" + SELF_NAME
+        mkdir(CACHEDIR)
+        mkdir(cdir)
+        cpkg = cdir + "/" + SELF_NAME + "-" + target + ".cpkg"
+        if file_exists(cpkg) {
+            print("  cached " + cpkg)
+        } else if kind_of(r) == "url" {
+            url: str = r + "/" + rel
+            print("  downloading catpm@" + target + " <- " + url)
+            rc: int = http_download_soft(url, cpkg)
+            if rc != 0 {
+                print("  source " + r + " failed (curl exit " + str(rc) + "), trying next")
+                if file_exists(cpkg) {
+                    delete_file(cpkg)
+                }
+                k = k + 1
+                continue
+            }
+        } else {
+            src: str = r + "/" + rel
+            if not file_exists(src) {
+                print("  source " + r + " missing file " + src + ", trying next")
+                k = k + 1
+                continue
+            }
+            print("  copying catpm@" + target + " <- " + src)
+            copy_file(src, cpkg)
+        }
+        gotit = True
+        break
+    }
+    if not gotit {
+        print("catpm: all sources failed to provide catpm@" + target)
+        exit_now(1)
+    }
+    # sha256 gate: a tampered/corrupt package must never touch the live binary
+    got: str = sha256_of(cpkg)
+    if want_sha != "" and got != want_sha {
+        print("catpm: sha256 MISMATCH for " + cpkg)
+        print("  index:  " + want_sha)
+        print("  actual: " + got)
+        delete_file(cpkg)
+        print("catpm: self-update aborted; binary NOT touched")
+        exit_now(1)
+    }
+    print("  sha256 ok (" + got[0:16] + "...)")
+    # unpack into a staging dir next to the cache, extract bin/catpm
+    stage: str = CACHEDIR + "/self-stage"
+    sh_die("rm -rf '" + stage + "'", "clean self-update stage")
+    mkdir(stage)
+    sh_die("tar -xzf '" + cpkg + "' -C '" + stage + "'", "unpack catpm package")
+    newbin: str = stage + "/bin/catpm"
+    if not file_exists(newbin) {
+        print("catpm: package catpm@" + target + " has no bin/catpm inside")
+        sh_die("rm -rf '" + stage + "'", "clean self-update stage")
+        exit_now(1)
+    }
+    # candidate goes NEXT TO the live binary, never over it
+    cand: str = bd + "/catpm.new"
+    sh_die("cp '" + newbin + "' '" + cand + "' && chmod 0755 '" + cand + "'", "stage candidate binary")
+    # smoke test: the candidate must run AND report the target version
+    outv: str = exec("'" + cand + "' --version").strip()
+    if outv.find(target) < 0 {
+        print("catpm: candidate binary failed verification")
+        print("  expected --version containing '" + target + "', got: " + outv)
+        delete_file(cand)
+        sh_die("rm -rf '" + stage + "'", "clean self-update stage")
+        print("catpm: self-update aborted; binary NOT touched")
+        exit_now(1)
+    }
+    print("  candidate verified: " + outv)
+    # atomic replace: mv is rename(2) within the same directory
+    sh_die("mv -f '" + cand + "' '" + live + "'", "replace binary")
+    sh_die("rm -rf '" + stage + "'", "clean self-update stage")
+    # also refresh package.where if the package ships one? it doesn't — the
+    # installed package.where keeps pointing at the registry; nothing to do.
+    print("catpm: updated " + live + " -> " + target)
+    print("catpm: now: " + exec("'" + live + "' --version").strip())
 }
 
 def cmd_list() {

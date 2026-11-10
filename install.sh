@@ -10,7 +10,7 @@ set -eu
 
 REPO="monikalnbo/catpm"
 RAW="https://raw.githubusercontent.com/${REPO}/main"
-VERSION="catpm4"          # binary name in the repo (v0.4.0)
+VERSION="catpm5"          # binary name in the repo (v0.5.0, self-update capable)
 
 if [ -n "${CATPM_INSTALL_DIR:-}" ]; then
     DEST="${CATPM_INSTALL_DIR}"

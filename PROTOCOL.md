@@ -14,7 +14,7 @@ catpm 的包生态由四层协议构成。每层只依赖下一层，可以单�
 └────────────────────────────────────────────┘
 ```
 
-所有 JSON 字段名、文件名、哈希算法均为本规范的固定部分。实现参考：`catpm/src2/`（CatBase 写的参考实现，编译产物 `catpm/catpm2`）。
+所有 JSON 字段名、文件名、哈希算法均为本规范的固定部分。实现参考：`catpm/src2/`（CatBase 写的参考实现，编译产物 `catpm/catpm5`）。
 
 ---
 
@@ -246,6 +246,33 @@ https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
 
 发布 = `catpm pack` → `catpm publish <registry-仓库检出目录>` → `git push`。注意 registry 仓库的 `.gitignore` 不能含 `*.cpkg` 规则（否则包体进不了 git 树，index.json 里指向 404——v0.3 发布 loganx 时踩过，靠 `git add -f` 补救；catpm-registry 的 .gitignore 只忽略 `.catpm-cache/`）。
 
+### 4.5 自更新：catpm 本体也是源里的一个包（v0.5）
+
+对标 `apt install apt` / `pip install -U pip`：catpm 本体（名字就叫 `catpm`）作为**普通包**挂在源里，`catpm self-update` 完全复用第 4 层协议（package.where 多源解析 → index.json → .cpkg 下载 → sha256 校验），不另造发布机制。包内布局：
+
+```
+catpm-registry/
+  catpm/
+    catpm-0.4.0.cpkg      内含 bin/catpm（预编译 x86_64 ELF）+ 全部源码
+    catpm-0.5.0.cpkg      （index.catc、util.catc、ver.catc）
+    catpm-0.5.1.cpkg
+```
+
+`catpm.json` 依赖为空（PM 无运行时依赖，仅依赖系统 `tar`/`sha256sum`/`curl`）。
+
+**命令语义**：`catpm self-update [@spec]`——省略 spec 取源中最高版本；`@spec` 用第 2 层说明符语法（`@0.4.0` 精确、`@^0.5.0` 范围均可，显式降级允许）。前缀 `@` 对应 `add pkg@spec` 的写法，实现上先剥去再解析。
+
+**原子替换流程**（任一步失败即中止，旧二进制零接触）：
+
+1. 按 package.where 解析 catpm 包的目标版本（多源版本并集，prio/pkg= 钉定照常生效）
+2. 下载 .cpkg 进项目缓存 `.catpm-cache/` → **sha256 门**：与 index.json 记录不符即删缓存中止
+3. 解包取 `bin/catpm` 放 `<bindir>/catpm.new`（绝不直接写活文件）→ **冒烟测试**：`catpm.new --version` 输出必须含目标版本号，否则删候选中止
+4. 全部通过才 `mv -f catpm.new catpm`（同目录 rename(2)，内核原子）——不存在"半替换"状态
+
+失败实测（`logs/selfupdate5.log`）：源不可达 / sha256 篡改 / 坏二进制候选，三种情况旧版均完好可继续装包，`bin/` 无 `.new` 残留。
+
+**鸡生蛋边界（如实记录）**：catpm 0.4.0 及更早没有 self-update 子命令（如同远古 apt 需先 `apt-get` 装新 apt）。从旧版升级到 ≥0.5.0 走 `curl | sh` 重装或手动放二进制；此后再靠 self-update 演进。
+
 ---
 
 ## 命令对照（pip / npm / catpm）
@@ -268,6 +295,7 @@ https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
 | 固定源 | `-i https://pypi.org/simple` | `--registry` | `package.where`（`CATPM_REGISTRY` 为单源兼容） |
 | 源清单/多源 | pip.conf `index-url`（单源） | `.npmrc`（单源） | **`package.where`** 多源清单（apt sources.list 式，§4.0） |
 | 查看源 | — | `npm config get registry` | `catpm sources`（含可达性检查） |
+| 更新 PM 自身 | `pip install -U pip` | （npm 自更新用 nvm/n） | **`catpm self-update [@spec]`**（本体也是源里的包，§4.5） |
 | 锁文件 | （无标准） | `package-lock.json` | `catpm.lock` |
 
 语义差异（如实记录）：catpm 的 `add` 同时写清单并安装（npm 语义）；pip 的 `install` 对应 catpm 的 `install`。catpm 没有全局安装、没有虚拟环境概念——依赖永远装在项目内 `deps/`。

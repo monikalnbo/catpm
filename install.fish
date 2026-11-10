@@ -6,7 +6,7 @@
 
 set REPO monikalnbo/catpm
 set RAW "https://raw.githubusercontent.com/$REPO/main"
-set VERSION catpm4              # binary name in the repo (v0.4.0)
+set VERSION catpm5              # binary name in the repo (v0.5.0, self-update capable)
 
 if set -q CATPM_INSTALL_DIR
     set DEST $CATPM_INSTALL_DIR

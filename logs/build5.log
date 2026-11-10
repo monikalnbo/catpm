@@ -1,0 +1,53 @@
+
+==================================================
+== BUILD LOG v5 — catpm 0.5.0 (self-update)  2026-11-10 08:02:33Z
+==================================================
+catcc: CatBase Compiler (catcc) 0.1.8   zig: 0.14.1
+
+
+==================================================
+== [1/4] version engine unit tests (44 assertions, unchanged from v0.4)
+==================================================
+Compilation successful.
+ALL VER TESTS PASSED
+exit=0
+
+
+==================================================
+== [2/4] catpm v0.5.0 -> native binary (fresh compile)
+==================================================
+Compilation successful.
+compile wall=11.48 s
+catpm5 binary: 273952 bytes
+catpm 0.5.0 (for CatBase 0.1.8)
+
+
+==================================================
+== [3/4] catpm 0.5.1 (target-of-update build, same source + version bump)
+==================================================
+Compilation successful.
+catpm 0.5.1 (for CatBase 0.1.8)
+
+
+==================================================
+== [4/4] catpm published AS A PACKAGE (self-hosting)
+==================================================
+registry4 packages: 7
+catpm versions: {
+ "0.5.1": {
+  "sha256": "3696c5345af36a9d28d85a579f72c4a41d01b6fb3b275d203d574f0a2be949a9",
+  "deps": {},
+  "path": "catpm/catpm-0.5.1.cpkg"
+ },
+ "0.5.0": {
+  "sha256": "6ab8f381b3c9b5e6e0190d66e9c858de69480d8b14437e212b6f5c0281a3e68c",
+  "deps": {},
+  "path": "catpm/catpm-0.5.0.cpkg"
+ },
+ "0.4.0": {
+  "sha256": "1ac8dc412245c8d033a0aa4986cafd1064bfa5dba5ed722ef6870905068cf499",
+  "deps": {},
+  "path": "catpm/catpm-0.4.0.cpkg"
+ }
+}
+GitHub raw catpm versions: ['0.4.0', '0.5.0', '0.5.1']

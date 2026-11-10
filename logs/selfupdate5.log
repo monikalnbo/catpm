@@ -1,0 +1,130 @@
+
+==================================================
+== SELF-UPDATE LOG v5  2026-11-10 08:02:59Z
+==================================================
+mechanism: catpm is a normal package (name 'catpm', prebuilt bin/catpm inside);
+self-update resolves via package.where sources -> sha256 gate -> candidate
+smoke test (--version must report the target) -> mv (rename, atomic).
+
+
+==================================================
+== [1/5] UPGRADE PATH (isolated prefix, local registry4 source)
+==================================================
+$ bin/catpm --version   (BEFORE)
+  catpm 0.5.0 (for CatBase 0.1.8)
+
+$ catpm self-update
+  catpm: current version 0.5.0
+  catpm: target version  0.5.1
+    copying catpm@0.5.1 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/catpm/catpm-0.5.1.cpkg
+    sha256 ok (3696c5345af36a9d...)
+    candidate verified: catpm 0.5.1 (for CatBase 0.1.8)
+  catpm: updated /tmp/prefix5/bin/catpm -> 0.5.1
+  catpm: now: catpm 0.5.1 (for CatBase 0.1.8)
+  exit=0
+
+$ bin/catpm --version   (AFTER)
+  catpm 0.5.1 (for CatBase 0.1.8)
+
+$ ls bin/   (no .new / stage leftovers)
+  catpm
+
+$ catpm self-update   (idempotent re-run)
+  catpm: current version 0.5.1
+  catpm: target version  0.5.1
+  catpm: already up to date
+  exit=0
+
+$ catpm self-update @0.4.0   (explicit pinned downgrade)
+  catpm: current version 0.5.1
+  catpm: target version  0.4.0
+    copying catpm@0.4.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/catpm/catpm-0.4.0.cpkg
+    sha256 ok (1ac8dc412245c8d0...)
+    candidate verified: catpm 0.4.0 (for CatBase 0.1.8)
+  catpm: updated /tmp/prefix5/bin/catpm -> 0.4.0
+  catpm: now: catpm 0.4.0 (for CatBase 0.1.8)
+  exit=0
+  after: catpm 0.4.0 (for CatBase 0.1.8)
+  (note: 0.4.0 predates self-update; upgrading back from it needs the
+   install.sh/registry route — same as an ancient apt needing apt-get first)
+
+$ catpm self-update @9.9.9   (unsatisfiable spec)
+  catpm: current version 0.5.0
+  catpm: no catpm version satisfies '9.9.9' (available: 0.5.1 0.5.0 0.4.0)
+  exit=0
+  still: catpm 0.5.0 (for CatBase 0.1.8)
+
+==================================================
+== [2/5] FAILURE: unreachable source (old binary must survive, no half-replace)
+==================================================
+  catpm: current version 0.5.0
+  catpm: warning: source unreachable: /tmp/nonexistent-reg-xyz (no index.json)
+  catpm: no reachable source (all failed; see warnings above)
+  exit=0
+  binary still: catpm 0.5.0 (for CatBase 0.1.8)
+  bin/: catpm
+
+==================================================
+== [3/5] FAILURE: sha256 tamper (index sha zeroed; download must be rejected)
+==================================================
+  catpm: current version 0.5.0
+  catpm: target version  0.5.1
+    copying catpm@0.5.1 <- /tmp/tamper5/catpm/catpm-0.5.1.cpkg
+  catpm: sha256 MISMATCH for .catpm-cache/catpm/catpm-0.5.1.cpkg
+    index:  0000000000000000000000000000000000000000000000000000000000000000
+    actual: 3696c5345af36a9d28d85a579f72c4a41d01b6fb3b275d203d574f0a2be949a9
+  catpm: self-update aborted; binary NOT touched
+  exit=0
+  binary still: catpm 0.5.0 (for CatBase 0.1.8)
+  bin/: catpm
+
+==================================================
+== [4/5] FAILURE: broken candidate (cpkg with garbage bin/catpm but valid sha)
+==================================================
+  catpm: current version 0.5.0
+  catpm: target version  0.5.1
+    copying catpm@0.5.1 <- /tmp/broken5/catpm/catpm-0.5.1.cpkg
+    sha256 ok (f4cdb379ddc3d1b4...)
+  catpm: candidate binary failed verification
+    expected --version containing '0.5.1', got: 
+  catpm: self-update aborted; binary NOT touched
+  exit=0
+  binary still: catpm 0.5.0 (for CatBase 0.1.8)
+  bin/: catpm
+
+==================================================
+== [5/5] LIVE: self-update over HTTPS from github.com/monikalnbo/catpm-registry
+==================================================
+--- package.where (default, ships next to binary) ---
+  # catpm source list v1 (apt sources.list style)
+  # <dir-or-URL> [prio=N] [pkg=name1,name2]
+  # default source: the dedicated package registry repository
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+
+$ bin/catpm self-update   (no env vars; pure GitHub raw)
+  before: catpm 0.5.0 (for CatBase 0.1.8)
+  catpm: current version 0.5.0
+  catpm: target version  0.5.1
+    downloading catpm@0.5.1 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/catpm/catpm-0.5.1.cpkg
+    sha256 ok (3696c5345af36a9d...)
+    candidate verified: catpm 0.5.1 (for CatBase 0.1.8)
+  catpm: updated /tmp/live5/bin/catpm -> 0.5.1
+  catpm: now: catpm 0.5.1 (for CatBase 0.1.8)
+  exit=0
+  after:  catpm 0.5.1 (for CatBase 0.1.8)
+  bin/: catpm
+  bin/: package.where
+
+--- and the updated binary keeps working for normal ops ---
+  catpm: resolved 3 package(s):
+    installed randx@0.1.0 (sha256 ok) -> deps/randx/index.catc
+    installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+    installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+
+--- raw reachability (catpm packages on the registry repo) ---
+  200  catpm/catpm-0.4.0.cpkg
+  200  catpm/catpm-0.5.0.cpkg
+  200  catpm/catpm-0.5.1.cpkg
+  200  index.json
+
+END OF SELF-UPDATE LOG v5
