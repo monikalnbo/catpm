@@ -1,8 +1,23 @@
 # ============================================================
-# catpm v0.3.0 — dependency package manager for CatBase v0.1.8
+# catpm v0.4.0 — dependency package manager for CatBase v0.1.8
 # written in CatBase, compiled by catcc to a native binary.
 #
-# v0.3 adds (over v0.2):
+# v0.4 adds (over v0.3):
+#   - AND version specifier lists: pkg@'>=0.2.0,<0.3.0'
+#     (every comma-separated constraint must hold; same syntax
+#     as pip's comma list / npm's space-separated AND)
+#   - '*' documented + accepted as an explicit any-version spec
+#   - `catpm install` now honors an existing catpm.lock: installs
+#     EXACTLY the locked versions (lock-exact restore, like
+#     `npm ci` / `pip install` with a lock) and rewrites nothing;
+#     `catpm update` re-resolves from catpm.json and rewrites the
+#     lock (like `npm update`)
+#   - upgrade/downgrade no longer leaves stale files: deps/<name>/
+#     is wiped before each (re)install
+#   - `catpm outdated`: show current vs newest version per package
+#   - version engine unit tests extended to 44 assertions
+#
+# v0.3 (unchanged):
 #   - package.where source list (apt sources.list style):
 #       <source> [prio=N] [pkg=name1,name2]
 #     multiple sources, priority-ordered downloads, per-source
@@ -26,14 +41,19 @@
 #   .catpm-cache/<name>/<name>-<ver>.cpkg   download cache
 #
 # usage: catpm <command> [args]
-#   init / add <pkg[@spec]> / install / lock / list / remove / pack /
-#   publish <registry-dir> / sources / --version
+#   init / add <pkg[@spec]> / install / update / lock / list /
+#   remove / outdated / pack / publish <registry-dir> / sources /
+#   --version
 # ============================================================
 
 import ./util.catc as util
 import ./ver.catc as ver
 
-CATPM_VERSION: str = "0.3.0"
+CATPM_VERSION: str = "0.4.0"
+
+import ./util.catc as util
+import ./ver.catc as ver
+
 MANIFEST: str = "catpm.json"
 LOCKFILE: str = "catpm.lock"
 DEPSDIR: str = "deps"
@@ -56,6 +76,10 @@ def main(args: list[str]) {
         cmd_add(args[1])
     } else if cmd == "install" {
         cmd_install()
+    } else if cmd == "update" {
+        cmd_update()
+    } else if cmd == "outdated" {
+        cmd_outdated()
     } else if cmd == "lock" {
         cmd_lock()
     } else if cmd == "list" {
@@ -87,8 +111,10 @@ def main(args: list[str]) {
 def usage() {
     print("usage: catpm <command> [args]")
     print("  init                   create " + MANIFEST + " in the current directory")
-    print("  add <pkg[@spec]>       add dependency (spec: 1.2.3 ^1.2 ~1.2 >=1 <2 latest)")
-    print("  install                install all deps from " + MANIFEST)
+    print("  add <pkg[@spec]>       add dependency (spec: 1.2.3 ^1.2 ~1.2 >=1,<2 * latest)")
+    print("  install                install exactly what " + LOCKFILE + " pins (or resolve fresh)")
+    print("  update                 re-resolve from " + MANIFEST + " and rewrite " + LOCKFILE)
+    print("  outdated               show current vs newest version per package")
     print("  lock                   resolve + write " + LOCKFILE + " without installing")
     print("  list                   list installed packages and versions")
     print("  remove <name>          remove a direct dependency and prune orphans")
@@ -792,8 +818,12 @@ def install_one(st: dict[str, any], name: str, version: str) {
         exit_now(1)
     }
     # unpack into deps/<name>/  (tar.gz made by pack: index.catc + catpm.json at root)
+    # wipe any previous install first: an upgrade must not leave stale files
     dst: str = DEPSDIR + "/" + name
     mkdir(DEPSDIR)
+    if isdir(dst) {
+        sh_die("rm -rf '" + dst + "'", "clean " + dst)
+    }
     mkdir(dst)
     sh_die("tar -xzf '" + cpkg + "' -C '" + dst + "'", "unpack " + cpkg)
     if not file_exists(dst + "/index.catc") {
@@ -907,7 +937,111 @@ def cmd_install() {
         print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
         exit_now(1)
     }
+    # lock-exact restore (like `npm ci`): if a lock exists and covers every
+    # manifest dep, install EXACTLY the locked versions — no re-resolution.
+    lock: dict[str, str] = read_lock()
+    direct: dict[str, str] = manifest_direct_deps()
+    usable: bool = file_exists(LOCKFILE) and len(lock) > 0
+    if usable {
+        dk: list[str] = direct.keys()
+        i: int = 0
+        while i < len(dk) {
+            if not lock.contains(dk[i]) {
+                usable = False
+            }
+            i = i + 1
+        }
+    }
+    if usable {
+        install_from_lock(lock)
+        return
+    }
     do_install()
+}
+
+# install exactly the pins in the lock file (no resolver involved)
+def install_from_lock(lock: dict[str, str]) {
+    st: dict[str, any] = load_sources()
+    fetch_all(st)
+    print("catpm: installing exactly from " + LOCKFILE + " (lock-exact; no re-resolution)")
+    names: list[str] = lock.keys()
+    # deterministic order: sort by name
+    i: int = 1
+    while i < len(names) {
+        key: str = names[i]
+        j: int = i - 1
+        while j >= 0 and util.str_greater(names[j], key) {
+            names[j + 1] = names[j]
+            j = j - 1
+        }
+        names[j + 1] = key
+        i = i + 1
+    }
+    k: int = 0
+    while k < len(names) {
+        install_one(st, names[k], lock[names[k]])
+        k = k + 1
+    }
+    # anything in deps/ not covered by the lock is stale -> prune
+    prune()
+    print("catpm: lock restore complete (" + str(len(names)) + " package(s))")
+}
+
+def cmd_update() {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    print("catpm: updating (re-resolving " + MANIFEST + " from sources)")
+    do_install()
+}
+
+def cmd_outdated() {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    lock: dict[str, str] = read_lock()
+    if len(lock) == 0 {
+        print("catpm: no " + LOCKFILE + " yet (run catpm install or catpm lock first)")
+        exit_now(1)
+    }
+    st: dict[str, any] = load_sources()
+    fetch_all(st)
+    print("  package   current   newest")
+    names: list[str] = lock.keys()
+    i: int = 1
+    while i < len(names) {
+        key: str = names[i]
+        j: int = i - 1
+        while j >= 0 and util.str_greater(names[j], key) {
+            names[j + 1] = names[j]
+            j = j - 1
+        }
+        names[j + 1] = key
+        i = i + 1
+    }
+    found: int = 0
+    k: int = 0
+    while k < len(names) {
+        n: str = names[k]
+        vers: dict[str, any] = merged_versions(st, n)
+        cands: list[str] = vers.keys()
+        newest: str = ver.best_match(cands, "*")
+        cur: str = lock[n]
+        mark: str = ""
+        if newest != "" {
+            if ver.vcmp(newest, cur) > 0 {
+                mark = "  -> upgradable"
+                found = found + 1
+            }
+        }
+        print("  " + util.pad(n, 10) + util.pad(cur, 10) + newest + mark)
+        k = k + 1
+    }
+    if found == 0 {
+        print("  (all up to date)")
+    }
 }
 
 def cmd_lock() {

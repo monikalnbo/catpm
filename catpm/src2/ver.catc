@@ -6,8 +6,10 @@
 #   >=1.2.0      lower bound (also > with has_equal handling below)
 #   <=2.0.0      upper bound
 #   >1.0.0  <2.0.0   strict bounds
-#   latest       any version (registry picks highest)
-# NOT supported (documented as unsupported): * , x-ranges, ||, , (AND lists), ~=
+#   latest  *    any version (registry picks highest)
+#   A,B,C        AND list: every comma-separated constraint must hold
+#                (e.g. ">=0.2.0,<0.3.0" -> only 0.2.x)
+# NOT supported (documented as unsupported): x-ranges (1.x), || (OR), ~=, prerelease
 
 def vlen(v: str) -> int {
     # number of dot-separated numeric segments (trailing junk ignored)
@@ -127,7 +129,22 @@ def split_pkg(s: str) -> list[str] {
 }
 
 # does version v satisfy specifier spec?
+# spec may be a comma-separated AND list: ">=0.2.0,<0.3.0"
 def satisfies(v: str, spec: str) -> bool {
+    parts: list[str] = spec.split(",")
+    i: int = 0
+    while i < len(parts) {
+        p: str = parts[i].strip()
+        if not satisfies_one(v, p) {
+            return False
+        }
+        i = i + 1
+    }
+    return True
+}
+
+# does v satisfy a single (non-comma) constraint?
+def satisfies_one(v: str, spec: str) -> bool {
     if spec == "latest" or spec == "*" or spec == "" {
         return True
     }
