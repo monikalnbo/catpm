@@ -1,0 +1,33 @@
+
+==================================================
+== BUILD LOG — catpm 2026-11-10 02:56:45Z
+==================================================
+catcc: CatBase Compiler (catcc) 0.1.8   zig: 0.14.1
+host: Linux 6.12.107+deb13-amd64 x86_64
+
+
+==================================================
+== [1/2] compile catpm source -> native binary
+==================================================
+$ catcc catpm/src/catpm.cat -o catpm/catpm
+Compiling /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/src/catpm.cat...
+
+Warning (catcc static analysis): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/src/catpm.cat:47: subscript args[1] may be out of bounds: current guard only proves len(args) >= 1.
+  Hint: strengthen the guard before this use, e.g. `if len(args) > 1 { ... }`.
+
+Warning (catcc static analysis): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/src/catpm.cat:57: subscript args[1] may be out of bounds: current guard only proves len(args) >= 1.
+  Hint: strengthen the guard before this use, e.g. `if len(args) > 1 { ... }`.
+CAIR file generated: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catbase/runtime/catpm.cair
+Invoking CatBase bin compiler...
+Compilation successful.
+compile exit=0  wall=9.54 s
+
+
+==================================================
+== [2/2] artifacts
+==================================================
+catpm binary: 198336 bytes
+file(1): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/catpm: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 2.0.0, stripped
+
+smoke: $ catpm/catpm --version
+catpm 0.1.0 (for CatBase 0.1.8)

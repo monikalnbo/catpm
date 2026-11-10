@@ -1,0 +1,120 @@
+
+==================================================
+== RUN LOG — catpm end-to-end demo 2026-11-10 02:56:55Z
+==================================================
+
+==================================================
+== [1/7] fresh project + init
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name> [version]
+--- catpm.json ---
+{"deps":{},"name":"my-project","catpm":"0.1.0"}
+
+==================================================
+== [2/7] add mathx (latest) — expect transitive stringx 0.3.0
+==================================================
+$ catpm add mathx
+catpm: added mathx@0.2.0 to catpm.json
+catpm: resolving dependencies (registry: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  installed mathx@0.2.0 -> deps/mathx/index.catc
+  installed stringx@0.3.0 -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [3/7] add fmtx — diamond: fmtx and mathx share stringx
+==================================================
+$ catpm add fmtx
+catpm: added fmtx@0.1.0 to catpm.json
+catpm: resolving dependencies (registry: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry)
+catpm: resolved 3 package(s):
+  - fmtx@0.1.0
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  installed fmtx@0.1.0 -> deps/fmtx/index.catc
+  installed mathx@0.2.0 -> deps/mathx/index.catc
+  installed stringx@0.3.0 -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [4/7] list + lock + vendored tree
+==================================================
+$ catpm list
+installed packages in ./deps:
+  fmtx  0.1.0
+  mathx  0.2.0
+  stringx  0.3.0
+--- catpm.lock ---
+# catpm lock file (generated, do not edit)
+# format: name version
+fmtx 0.1.0
+mathx 0.2.0
+stringx 0.3.0
+--- catpm.json ---
+{"deps":{"fmtx":"0.1.0","mathx":"0.2.0"},"name":"my-project","catpm":"0.1.0"}
+--- deps/ tree ---
+deps/fmtx/index.catc
+deps/mathx/index.catc
+deps/stringx/index.catc
+
+==================================================
+== [5/7] compile demo app that imports the installed packages
+==================================================
+$ catcc main.cat -o app
+Compiling /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/demo/main.cat...
+CAIR file generated: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catbase/runtime/main.cair
+Invoking CatBase bin compiler...
+Compilation successful.
+compile exit=0  wall=3.14 s
+app binary: 89696 bytes
+
+==================================================
+== [6/7] run the app (uses direct + transitive deps)
+==================================================
+$ ./app
+== catpm end-to-end demo ==
+mathx version:  0.2.0  ( 55  fib)
+gcd(48,36) =  12   lcm(4,6) =  12   prime(17) =  True
+transitive call mathx.loud_double(21) =  42!
+fmtx.banner:  =========== catpm ============
+fmtx.bracket('ok') =  [OK!]
+stringx.reverse('cat') =  tac   palindrome('level') =  True
+stringx.words count =  4  [1] =  quick
+exit=0
+
+==================================================
+== [7/7] remove fmtx -> prune; remove mathx -> prune all
+==================================================
+$ catpm remove fmtx
+catpm: removed fmtx from catpm.json
+catpm: resolving dependencies (registry: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  installed mathx@0.2.0 -> deps/mathx/index.catc
+  installed stringx@0.3.0 -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+catpm: pruned deps/fmtx (no longer needed)
+exit=0
+deps after: mathx stringx 
+$ catpm remove mathx
+catpm: removed mathx from catpm.json
+catpm: no dependencies in catpm.json (writing empty lock, pruning)
+catpm: pruned deps/mathx (no longer needed)
+catpm: pruned deps/stringx (no longer needed)
+exit=0
+deps after:  (should be empty)
+--- final catpm.lock ---
+# catpm lock file (generated, do not edit)
+# format: name version
+
+END OF RUN LOG

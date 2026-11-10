@@ -1,0 +1,69 @@
+# mathx 0.2.0 — adds fib(); still depends on stringx 0.3.0
+import ../stringx/index.catc as stringx
+
+MATHX_VERSION: str = "0.2.0"
+
+def gcd(a: int, b: int) -> int {
+    x: int = a
+    y: int = b
+    while y != 0 {
+        t: int = x % y
+        x = y
+        y = t
+    }
+    if x < 0 {
+        return 0 - x
+    }
+    return x
+}
+
+def lcm(a: int, b: int) -> int {
+    g: int = gcd(a, b)
+    if g == 0 {
+        return 0
+    }
+    return a / g * b
+}
+
+def is_prime(n: int) -> bool {
+    if n < 2 {
+        return False
+    }
+    i: int = 2
+    while i * i <= n {
+        if n % i == 0 {
+            return False
+        }
+        i = i + 1
+    }
+    return True
+}
+
+def fib(n: int) -> int {
+    a: int = 0
+    b: int = 1
+    i: int = 0
+    while i < n {
+        t: int = a + b
+        a = b
+        b = t
+        i = i + 1
+    }
+    return a
+}
+
+def loud_double(n: int) -> str {
+    return stringx.shout(str(n * 2))
+}
+
+def power(base: int, e: int) -> int {
+    r: int = 1
+    i: int = 0
+    while i < e {
+        r = r * base
+        i = i + 1
+    }
+    return r
+}
+
+MATHX3: str = "yes"

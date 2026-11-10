@@ -1,0 +1,58 @@
+# util.catc - shared helpers for catpm
+# json_loads() already returns dict[str, any] directly; helpers below wrap
+# the common "nested dict" and "string value" access patterns.
+
+def get_dict(src: dict[str, any], key: str) -> dict[str, any] {
+    out: dict[str, any] = {}
+    if src.contains(key) {
+        nested: any = src.get(key, None)
+        if nested is None {
+            return out
+        }
+        # a dict value: copy its keys so callers get a clean dict[str, any]
+        nd: dict[str, any] = nested
+        ks: list[str] = nd.keys()
+        i: int = 0
+        while i < len(ks) {
+            out.put(ks[i], nd.get(ks[i], None))
+            i = i + 1
+        }
+    }
+    return out
+}
+
+def get_str(src: dict[str, any], key: str, dflt: str) -> str {
+    if not src.contains(key) {
+        return dflt
+    }
+    v: any = src.get(key, None)
+    if v is None {
+        return dflt
+    }
+    s: str = str(v)
+    return s
+}
+
+# lexicographic compare for ASCII strings: a > b?
+def str_greater(a: str, b: str) -> bool {
+    n: int = len(a)
+    if len(b) < n {
+        n = len(b)
+    }
+    i: int = 0
+    while i < n {
+        ca: int = ord(a[i:i+1])
+        cb: int = ord(b[i:i+1])
+        if ca > cb {
+            return True
+        }
+        if ca < cb {
+            return False
+        }
+        i = i + 1
+    }
+    if len(a) > len(b) {
+        return True
+    }
+    return False
+}

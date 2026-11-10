@@ -1,0 +1,5 @@
+deps/
+.catpm-cache/
+dist/
+*.o
+out/

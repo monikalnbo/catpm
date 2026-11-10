@@ -1,0 +1,18 @@
+# demo app: mathx (direct), fmtx (direct), stringx (transitive dep of both)
+# NOTE: every importer of ./deps/stringx/index.catc must use the alias
+# "stringx" — catcc v0.1.8 rejects one file imported under two aliases.
+import ./deps/mathx/index.catc as mathx
+import ./deps/fmtx/index.catc as fmtx
+import ./deps/stringx/index.catc as stringx
+
+def main() {
+    print("== catpm end-to-end demo ==")
+    print("mathx version: ", mathx.MATHX_VERSION, " (", mathx.fib(10), " fib)")
+    print("gcd(48,36) = ", mathx.gcd(48, 36), "  lcm(4,6) = ", mathx.lcm(4, 6), "  prime(17) = ", mathx.is_prime(17))
+    print("transitive call mathx.loud_double(21) = ", mathx.loud_double(21))
+    print("fmtx.banner: ", fmtx.banner("catpm"))
+    print("fmtx.bracket('ok') = ", fmtx.bracket("ok"))
+    print("stringx.reverse('cat') = ", stringx.reverse("cat"), "  palindrome('level') = ", stringx.is_palindrome("level"))
+    w: list[str] = stringx.words("  the quick   brown fox  ")
+    print("stringx.words count = ", len(w), " [1] = ", w[1])
+}

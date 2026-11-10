@@ -1,0 +1,52 @@
+import ./ver.catc as ver
+
+def expect(label: str, got: bool, want: bool) -> int {
+    if got != want {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+def main() {
+    bad: int = 0
+    bad = bad + expect("vcmp 1.10.0>1.9.0", ver.vcmp("1.10.0", "1.9.0") == 1, True)
+    bad = bad + expect("vcmp 0.1.0<0.2.0", ver.vcmp("0.1.0", "0.2.0") == -1, True)
+    bad = bad + expect("vcmp eq", ver.vcmp("1.2.3", "1.2.3") == 0, True)
+    bad = bad + expect("vcmp 1.0 vs 1.0.0", ver.vcmp("1.0", "1.0.0") == 0, True)
+    bad = bad + expect("bump maj", ver.bump("1.2.3", 0) == "2.0.0", True)
+    bad = bad + expect("bump min", ver.bump("1.2.3", 1) == "1.3.0", True)
+    bad = bad + expect("bump 0.2.3 min", ver.bump("0.2.3", 1) == "0.3.0", True)
+    bad = bad + expect("exact ok", ver.satisfies("1.2.3", "1.2.3"), True)
+    bad = bad + expect("exact no", ver.satisfies("1.2.4", "1.2.3"), False)
+    bad = bad + expect("caret in", ver.satisfies("1.5.0", "^1.2.0"), True)
+    bad = bad + expect("caret below", ver.satisfies("1.1.9", "^1.2.0"), False)
+    bad = bad + expect("caret above", ver.satisfies("2.0.0", "^1.2.0"), False)
+    bad = bad + expect("caret eq", ver.satisfies("1.2.0", "^1.2.0"), True)
+    bad = bad + expect("caret 0 locks minor", ver.satisfies("0.2.9", "^0.2.3"), True)
+    bad = bad + expect("caret 0 excl minor", ver.satisfies("0.3.0", "^0.2.3"), False)
+    bad = bad + expect("tilde in", ver.satisfies("1.2.9", "~1.2.3"), True)
+    bad = bad + expect("tilde excl", ver.satisfies("1.3.0", "~1.2.3"), False)
+    bad = bad + expect("ge", ver.satisfies("1.2.0", ">=1.0.0"), True)
+    bad = bad + expect("gt", ver.satisfies("1.0.1", ">1.0.0"), True)
+    bad = bad + expect("gt eq no", ver.satisfies("1.0.0", ">1.0.0"), False)
+    bad = bad + expect("lt", ver.satisfies("1.9.9", "<2.0.0"), True)
+    bad = bad + expect("le", ver.satisfies("2.0.0", "<=2.0.0"), True)
+    bad = bad + expect("latest", ver.satisfies("0.0.1", "latest"), True)
+    cands: list[str] = ["0.1.0", "0.2.0", "0.10.0", "0.9.0", "notaver"]
+    bad = bad + expect("best latest", ver.best_match(cands, "latest") == "0.10.0", True)
+    bad = bad + expect("best caret", ver.best_match(cands, "^0.2.0") == "0.2.0", True)
+    bad = bad + expect("best ge", ver.best_match(cands, ">=0.9.0") == "0.10.0", True)
+    bad = bad + expect("best none", ver.best_match(cands, ">=1.0.0") == "", True)
+    sp: list[str] = ver.split_pkg("mathx@^1.2.0")
+    bad = bad + expect("split name", sp[0] == "mathx", True)
+    bad = bad + expect("split spec", sp[1] == "^1.2.0", True)
+    sp2: list[str] = ver.split_pkg("fmtx")
+    bad = bad + expect("split default", sp2[1] == "latest", True)
+    if bad == 0 {
+        print("ALL VER TESTS PASSED")
+    } else {
+        print("FAILURES: ", bad)
+        exit(1)
+    }
+}

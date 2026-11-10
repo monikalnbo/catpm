@@ -1,0 +1,12 @@
+# demo2: v0.2 flow — packs published to registry2, installed via catpm2
+import ./deps/mathx/index.catc as mathx
+import ./deps/fmtx/index.catc as fmtx
+import ./deps/stringx/index.catc as stringx
+
+def main() {
+    print("== catpm v0.2 spec-resolved demo ==")
+    print("mathx pinned by ^0.2.0 -> ", mathx.MATHX_VERSION, " fib(10)=", mathx.fib(10))
+    print("transitive: mathx.loud_double(21) = ", mathx.loud_double(21))
+    print("diamond: fmtx.banner('catpm') = ", fmtx.banner("catpm"))
+    print("stringx.reverse('pack') = ", stringx.reverse("pack"))
+}

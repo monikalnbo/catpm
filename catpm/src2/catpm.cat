@@ -1,0 +1,769 @@
+# ============================================================
+# catpm v0.2 — dependency package manager for CatBase v0.1.8
+# written in CatBase, compiled by catcc to a native binary.
+#
+# v0.2 adds (over v0.1):
+#   - version specifiers: pkg@1.2.3 / ^1.2 / ~1.2 / >=1.0 / <2.0 /
+#     >x / <=x / latest  (resolved + locked per PROTOCOL.md layer 2)
+#   - `catpm lock`      : resolve + write lock WITHOUT installing
+#   - `catpm pack`      : pack cwd package -> dist/<name>-<ver>.cpkg
+#                         (tar.gz, protocol layer 3, sha256 recorded)
+#   - `catpm publish`   : copy .cpkg + manifest into a local registry
+#   - sources: local dir registry AND remote URL registry (curl via
+#     exec — builtin https is plaintext-TCP, see PROTOCOL.md layer 4)
+#   - download cache + sha256 verification (sha256sum via exec)
+#
+# project layout managed:
+#   catpm.json   manifest {"name","catpm","deps":{name:spec}}
+#   catpm.lock   resolved pins (protocol layer 2)
+#   deps/<name>/index.catc   vendored package sources
+#   .catpm-cache/<name>/<ver>/<name>-<ver>.cpkg   download cache
+#
+# usage: catpm <command> [args]
+#   init / add <pkg[@spec]> / install / lock / list / remove / pack /
+#   publish <registry-dir> / --version
+# ============================================================
+
+import ./util.catc as util
+import ./ver.catc as ver
+
+CATPM_VERSION: str = "0.2.0"
+MANIFEST: str = "catpm.json"
+LOCKFILE: str = "catpm.lock"
+DEPSDIR: str = "deps"
+CACHEDIR: str = ".catpm-cache"
+
+def main(args: list[str]) {
+    if len(args) < 1 {
+        usage()
+        return
+    }
+    cmd: str = args[0]
+    if cmd == "init" {
+        cmd_init()
+    } else if cmd == "add" {
+        if len(args) < 2 {
+            print("catpm: 'add' needs a package, e.g. add mathx or add mathx@^1.2.0")
+            return
+        }
+        cmd_add(args[1])
+    } else if cmd == "install" {
+        cmd_install()
+    } else if cmd == "lock" {
+        cmd_lock()
+    } else if cmd == "list" {
+        cmd_list()
+    } else if cmd == "remove" {
+        if len(args) < 2 {
+            print("catpm: 'remove' needs a package name")
+            return
+        }
+        cmd_remove(args[1])
+    } else if cmd == "pack" {
+        cmd_pack()
+    } else if cmd == "publish" {
+        if len(args) < 2 {
+            print("catpm: 'publish' needs a target registry directory")
+            return
+        }
+        cmd_publish(args[1])
+    } else if cmd == "--version" {
+        print("catpm " + CATPM_VERSION + " (for CatBase 0.1.8)")
+    } else {
+        print("catpm: unknown command '" + cmd + "'")
+        usage()
+    }
+}
+
+def usage() {
+    print("usage: catpm <command> [args]")
+    print("  init                   create " + MANIFEST + " in the current directory")
+    print("  add <pkg[@spec]>       add dependency (spec: 1.2.3 ^1.2 ~1.2 >=1 <2 latest)")
+    print("  install                install all deps from " + MANIFEST)
+    print("  lock                   resolve + write " + LOCKFILE + " without installing")
+    print("  list                   list installed packages and versions")
+    print("  remove <name>          remove a direct dependency and prune orphans")
+    print("  pack                   pack cwd package -> dist/<name>-<ver>.cpkg")
+    print("  publish <registry-dir> publish dist/*.cpkg into a local registry")
+    print("  --version              show catpm version")
+    print("sources: CATPM_REGISTRY=<dir|URL>  (default ./registry)")
+}
+
+# ---------- environment ----------
+
+def registry_root() -> str {
+    env: str = getenv("CATPM_REGISTRY")
+    if env != "" {
+        return env
+    }
+    return "registry"
+}
+
+def registry_is_url() -> bool {
+    r: str = registry_root()
+    if r.startswith("http://") or r.startswith("https://") {
+        return True
+    }
+    return False
+}
+
+def cache_dir() -> str {
+    return CACHEDIR
+}
+
+# ---------- shell helpers (exec captures stdout) ----------
+# exec(cmd) always exits 0 in the parent; a failing child is signalled by
+# writing its rc to /tmp/catpm_rc from within the sh script itself.
+
+def shell_quote(s: str) -> str {
+    return "'" + s.replace("'", "'\\''") + "'"
+}
+
+# run a shell command; on nonzero exit print stderr and die
+def sh_die(cmdline: str, what: str) {
+    tmp: str = "/tmp/catpm_sh_err"
+    rcfile: str = "/tmp/catpm_rc"
+    if file_exists(rcfile) {
+        delete_file(rcfile)
+    }
+    inner: str = cmdline.replace("'", "'\\''")
+    full: str = "sh -c '" + inner + " > " + tmp + " 2>&1'; rcode=$?; if [ $rcode -ne 0 ]; then echo $rcode > " + rcfile + "; fi"
+    exec(full)
+    if file_exists(rcfile) {
+        f: File = file(rcfile, "r")
+        c: str = f.read().strip()
+        f.close()
+        delete_file(rcfile)
+        errtxt: str = ""
+        if file_exists(tmp) {
+            errf: File = file(tmp, "r")
+            errtxt = errf.read().strip()
+            errf.close()
+            delete_file(tmp)
+        }
+        print("catpm: " + what + " failed (exit " + c + ")")
+        if errtxt != "" {
+            print("  " + errtxt)
+        }
+        exit_now(1)
+    }
+    if file_exists(tmp) {
+        delete_file(tmp)
+    }
+}
+
+# ---------- manifest (protocol layer 1) ----------
+
+def manifest_exists() -> bool {
+    return file_exists(MANIFEST)
+}
+
+def read_manifest() -> dict[str, any] {
+    f: File = file(MANIFEST, "r")
+    content: str = f.read()
+    f.close()
+    return json_loads(content)
+}
+
+def write_manifest(m: dict[str, any]) {
+    f: File = file(MANIFEST, "w")
+    f.write(json_dumps(m))
+    f.write("\n")
+    f.close()
+}
+
+def empty_manifest() -> dict[str, any] {
+    m: dict[str, any] = {}
+    m.put("name", "my-project")
+    m.put("catpm", CATPM_VERSION)
+    m.put("deps", {})
+    return m
+}
+
+def manifest_pkg_name(m: dict[str, any]) -> str {
+    return util.get_str(m, "name", "my-project")
+}
+
+def manifest_version(m: dict[str, any]) -> str {
+    return util.get_str(m, "version", "0.1.0")
+}
+
+# ---------- registry index access (protocol layer 4) ----------
+# index.json format (same for local dir and remote URL source):
+#   {"packages": {"<name>": {"<version>": {"path": "<rel>", "sha256": "<hex>"}}}}
+# local dir: index.json read from disk
+# remote URL: index.json fetched from <root>/index.json via curl
+
+def fetch_index() -> dict[str, any] {
+    idx: dict[str, any] = {}
+    root: str = registry_root()
+    if registry_is_url() {
+        body: str = http_fetch(root + "/index.json")
+        idx = json_loads(body)
+    } else {
+        p: str = root + "/index.json"
+        if not file_exists(p) {
+            print("catpm: registry index not found: " + p)
+            print("  (a registry source is a directory with index.json; see PROTOCOL.md)")
+            exit_now(1)
+        }
+        f: File = file(p, "r")
+        content: str = f.read()
+        f.close()
+        idx = json_loads(content)
+    }
+    return idx
+}
+
+# versions dict for a package from the index: {"ver": {"path":..,"sha256":..}}
+def index_versions(idx: dict[str, any], name: str) -> dict[str, any] {
+    pkgs: dict[str, any] = util.get_dict(idx, "packages")
+    if not pkgs.contains(name) {
+        return {}
+    }
+    return util.get_dict(pkgs, name)
+}
+
+def index_list_versions(idx: dict[str, any], name: str) -> list[str] {
+    vs: dict[str, any] = index_versions(idx, name)
+    return vs.keys()
+}
+
+# entry: {"path":..,"sha256":..} or {}
+def index_entry(idx: dict[str, any], name: str, v: str) -> dict[str, any] {
+    vs: dict[str, any] = index_versions(idx, name)
+    if not vs.contains(v) {
+        return {}
+    }
+    return util.get_dict(vs, v)
+}
+
+# ---------- http fetch (curl via exec; builtin https is plaintext, probe p22) ----------
+
+def http_fetch(url: str) -> str {
+    tmp: str = "/tmp/catpm_fetch_body"
+    sh_die("curl -sS --max-time 60 -f -L -o " + tmp + " '" + url + "'", "fetch " + url)
+    f: File = file(tmp, "r")
+    body: str = f.read()
+    f.close()
+    delete_file(tmp)
+    return body
+}
+
+def http_download(url: str, dst: str) {
+    sh_die("curl -sS --max-time 300 -f -L -o '" + dst + "' '" + url + "'", "download " + url)
+}
+
+# ---------- sha256 (sha256sum via exec) ----------
+
+def sha256_of(path: str) -> str {
+    out: str = exec("sha256sum '" + path + "'")
+    # "hex  path"
+    sp: int = out.find(" ")
+    if sp < 0 {
+        print("catpm: cannot hash " + path)
+        exit_now(1)
+    }
+    return out[0:sp]
+}
+
+# ---------- resolution (protocol layer 2) ----------
+# BFS over index.json; each package name resolved once, FIRST WINS.
+# resolved: name -> pinned version; order: stable BFS order.
+
+def resolve_all(direct: dict[str, str], resolved: dict[str, str], order: list[str]) -> list[str] {
+    warnings: list[str] = []
+    idx: dict[str, any] = fetch_index()
+    queue: list[str] = []
+    ks: list[str] = direct.keys()
+    i: int = 0
+    while i < len(ks) {
+        resolved.put(ks[i], direct[ks[i]])
+        queue.append(ks[i])
+        i = i + 1
+    }
+    qi: int = 0
+    while qi < len(queue) {
+        name: str = queue[qi]
+        qi = qi + 1
+        spec: str = resolved[name]
+        cands: list[str] = index_list_versions(idx, name)
+        if len(cands) == 0 {
+            print("catpm: package not found in registry: " + name + " (source: " + registry_root() + ")")
+            exit_now(1)
+        }
+        bestv: str = ver.best_match(cands, spec)
+        if bestv == "" {
+            print("catpm: no version of " + name + " satisfies '" + spec + "' (available: " + join_versions(cands) + ")")
+            exit_now(1)
+        }
+        resolved.put(name, bestv)
+        order.append(name + "@" + bestv)
+        # transitive deps from the package manifest inside the index entry
+        ent: dict[str, any] = index_entry(idx, name, bestv)
+        deps: dict[str, any] = util.get_dict(ent, "deps")
+        dk: list[str] = deps.keys()
+        j: int = 0
+        while j < len(dk) {
+            depname: str = dk[j]
+            depver: str = util.get_str(deps, depname, "latest")
+            if resolved.contains(depname) {
+                have: str = resolved[depname]
+                if not ver.satisfies(have, depver) {
+                    warnings.append(depname + ": " + name + " wants " + depver + ", keeping " + have)
+                }
+            } else {
+                resolved.put(depname, depver)
+                queue.append(depname)
+            }
+            j = j + 1
+        }
+    }
+    return warnings
+}
+
+def join_versions(vs: list[str]) -> str {
+    out: str = ""
+    i: int = 0
+    while i < len(vs) {
+        if i > 0 {
+            out = out + " "
+        }
+        out = out + vs[i]
+        i = i + 1
+    }
+    return out
+}
+
+# ---------- install (protocol layer 3+4: fetch cpkg, verify, unpack) ----------
+
+def install_one(idx: dict[str, any], name: str, version: str) {
+    ent: dict[str, any] = index_entry(idx, name, version)
+    rel: str = util.get_str(ent, "path", "")
+    want_sha: str = util.get_str(ent, "sha256", "")
+    if rel == "" {
+        print("catpm: index entry has no path for " + name + "@" + version)
+        exit_now(1)
+    }
+    root: str = registry_root()
+    # cache path
+    cdir: str = CACHEDIR + "/" + name
+    mkdir(CACHEDIR)
+    mkdir(cdir)
+    cpkg: str = cdir + "/" + name + "-" + version + ".cpkg"
+    if not file_exists(cpkg) {
+        if registry_is_url() {
+            url: str = root + "/" + rel
+            print("  downloading " + name + "@" + version + " <- " + url)
+            http_download(url, cpkg)
+        } else {
+            src: str = root + "/" + rel
+            if not file_exists(src) {
+                print("catpm: registry file missing: " + src)
+                exit_now(1)
+            }
+            copy_file(src, cpkg)
+        }
+    } else {
+        print("  cached " + cpkg)
+    }
+    got: str = sha256_of(cpkg)
+    if want_sha != "" and got != want_sha {
+        print("catpm: sha256 MISMATCH for " + cpkg)
+        print("  index:  " + want_sha)
+        print("  actual: " + got)
+        exit_now(1)
+    }
+    # unpack into deps/<name>/  (tar.gz made by pack: index.catc + catpm.json at root)
+    dst: str = DEPSDIR + "/" + name
+    mkdir(DEPSDIR)
+    mkdir(dst)
+    sh_die("tar -xzf '" + cpkg + "' -C '" + dst + "'", "unpack " + cpkg)
+    if not file_exists(dst + "/index.catc") {
+        print("catpm: package " + name + "@" + version + " has no index.catc after unpack")
+        exit_now(1)
+    }
+    print("  installed " + name + "@" + version + " (sha256 ok) -> " + dst + "/index.catc")
+}
+
+def copy_file(src: str, dst: str) {
+    f: File = file(src, "r")
+    body: str = f.read()
+    f.close()
+    o: File = file(dst, "w")
+    o.write(body)
+    o.close()
+}
+
+def write_lock(order: list[str], warnings: list[str]) {
+    f: File = file(LOCKFILE, "w")
+    f.write("# catpm lock file v2 (generated, do not edit)\n")
+    f.write("# format: name version\n")
+    i: int = 0
+    while i < len(order) {
+        pair: list[str] = order[i].split("@")
+        f.write(pair[0] + " " + pair[1] + "\n")
+        i = i + 1
+    }
+    if len(warnings) > 0 {
+        f.write("# conflicts:\n")
+        j: int = 0
+        while j < len(warnings) {
+            f.write("# " + warnings[j] + "\n")
+            j = j + 1
+        }
+    }
+    f.close()
+}
+
+def read_lock() -> dict[str, str] {
+    out: dict[str, str] = {}
+    if not file_exists(LOCKFILE) {
+        return out
+    }
+    f: File = file(LOCKFILE, "r")
+    content: str = f.read()
+    f.close()
+    lines: list[str] = content.split("\n")
+    i: int = 0
+    while i < len(lines) {
+        ln: str = lines[i].strip()
+        if ln != "" {
+            if ln[0] != "#" {
+                parts: list[str] = ln.split(" ")
+                if len(parts) >= 2 {
+                    out.put(parts[0], parts[1])
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# ---------- commands ----------
+
+def cmd_init() {
+    if manifest_exists() {
+        print("catpm: " + MANIFEST + " already exists here")
+        return
+    }
+    write_manifest(empty_manifest())
+    print("catpm: created " + MANIFEST)
+    print("  add deps with: catpm add <name>[@spec]")
+}
+
+def cmd_add(spec_str: str) {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    parts: list[str] = ver.split_pkg(spec_str)
+    name: str = parts[0]
+    spec: str = parts[1]
+    # validate against the registry BEFORE touching the manifest
+    idx: dict[str, any] = fetch_index()
+    cands: list[str] = index_list_versions(idx, name)
+    if len(cands) == 0 {
+        print("catpm: package not found in registry: " + name + " (source: " + registry_root() + ")")
+        exit_now(1)
+    }
+    bestv: str = ver.best_match(cands, spec)
+    if bestv == "" {
+        print("catpm: no version of " + name + " satisfies '" + spec + "' (available: " + join_versions(cands) + ")")
+        exit_now(1)
+    }
+    m: dict[str, any] = read_manifest()
+    deps: dict[str, any] = util.get_dict(m, "deps")
+    deps.put(name, spec)
+    m.put("deps", deps)
+    write_manifest(m)
+    print("catpm: added " + name + " '" + spec + "' to " + MANIFEST + " (resolves to " + bestv + ")")
+    do_install()
+}
+
+def cmd_install() {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    do_install()
+}
+
+def cmd_lock() {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    direct: dict[str, str] = manifest_direct_deps()
+    if len(direct) == 0 {
+        print("catpm: no dependencies in " + MANIFEST)
+        exit_now(1)
+    }
+    print("catpm: resolving (source: " + registry_root() + ")")
+    resolved: dict[str, str] = {}
+    order: list[str] = []
+    warnings: list[str] = resolve_all(direct, resolved, order)
+    write_lock(order, warnings)
+    print("catpm: wrote " + LOCKFILE + ":")
+    i: int = 0
+    while i < len(order) {
+        print("  - " + order[i])
+        i = i + 1
+    }
+    j: int = 0
+    while j < len(warnings) {
+        print("  ! conflict " + warnings[j])
+        j = j + 1
+    }
+}
+
+def manifest_direct_deps() -> dict[str, str] {
+    m: dict[str, any] = read_manifest()
+    direct_any: dict[str, any] = util.get_dict(m, "deps")
+    direct: dict[str, str] = {}
+    dk: list[str] = direct_any.keys()
+    i: int = 0
+    while i < len(dk) {
+        direct.put(dk[i], util.get_str(direct_any, dk[i], "latest"))
+        i = i + 1
+    }
+    return direct
+}
+
+def do_install() {
+    direct: dict[str, str] = manifest_direct_deps()
+    if len(direct) == 0 {
+        print("catpm: no dependencies in " + MANIFEST + " (writing empty lock, pruning)")
+        f: File = file(LOCKFILE, "w")
+        f.write("# catpm lock file v2 (generated, do not edit)\n")
+        f.write("# format: name version\n")
+        f.close()
+        prune()
+        return
+    }
+    print("catpm: resolving dependencies (source: " + registry_root() + ")")
+    resolved: dict[str, str] = {}
+    order: list[str] = []
+    warnings: list[str] = resolve_all(direct, resolved, order)
+    print("catpm: resolved " + str(len(order)) + " package(s):")
+    j: int = 0
+    while j < len(order) {
+        print("  - " + order[j])
+        j = j + 1
+    }
+    k: int = 0
+    while k < len(warnings) {
+        print("  ! conflict " + warnings[k])
+        k = k + 1
+    }
+    idx: dict[str, any] = fetch_index()
+    print("catpm: installing into ./" + DEPSDIR + "/")
+    j = 0
+    while j < len(order) {
+        pair: list[str] = order[j].split("@")
+        install_one(idx, pair[0], pair[1])
+        j = j + 1
+    }
+    write_lock(order, warnings)
+    print("catpm: wrote " + LOCKFILE)
+}
+
+def cmd_list() {
+    if not isdir(DEPSDIR) {
+        print("catpm: no ./" + DEPSDIR + "/ directory (nothing installed)")
+        return
+    }
+    lock: dict[str, str] = read_lock()
+    names: list[str] = listdir(DEPSDIR)
+    # insertion sort (no sorted() builtin in v0.1.8)
+    i: int = 1
+    while i < len(names) {
+        key: str = names[i]
+        j2: int = i - 1
+        while j2 >= 0 and util.str_greater(names[j2], key) {
+            names[j2 + 1] = names[j2]
+            j2 = j2 - 1
+        }
+        names[j2 + 1] = key
+        i = i + 1
+    }
+    print("installed packages in ./" + DEPSDIR + ":")
+    i = 0
+    while i < len(names) {
+        n: str = names[i]
+        if isdir(DEPSDIR + "/" + n) {
+            v: str = lock.get(n, "?")
+            tag: str = ""
+            if v == "?" {
+                tag = " (no lock entry)"
+            }
+            print("  " + n + "  " + v + tag)
+        }
+        i = i + 1
+    }
+}
+
+def cmd_remove(name: str) {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here")
+        exit_now(1)
+    }
+    m: dict[str, any] = read_manifest()
+    deps: dict[str, any] = util.get_dict(m, "deps")
+    if not deps.contains(name) {
+        print("catpm: " + name + " is not a direct dependency")
+        exit_now(1)
+    }
+    deps.remove(name)
+    m.put("deps", deps)
+    write_manifest(m)
+    print("catpm: removed " + name + " from " + MANIFEST)
+    do_install()
+    prune()
+}
+
+# delete deps/<name> for packages not in the lock file
+def prune() {
+    lock: dict[str, str] = read_lock()
+    if not isdir(DEPSDIR) {
+        return
+    }
+    names: list[str] = listdir(DEPSDIR)
+    i: int = 0
+    while i < len(names) {
+        n: str = names[i]
+        if isdir(DEPSDIR + "/" + n) {
+            if not lock.contains(n) {
+                print("catpm: pruned " + DEPSDIR + "/" + n + " (no longer needed)")
+                sh_die("rm -rf '" + DEPSDIR + "/" + n + "'", "prune " + n)
+            }
+        }
+        i = i + 1
+    }
+}
+
+# ---------- pack (protocol layer 3) ----------
+# reads catpm.json in cwd; requires name+version; packs index.catc (+ any
+# extra .catc files listed in "files") into dist/<name>-<ver>.cpkg (tar.gz)
+
+def cmd_pack() {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here")
+        exit_now(1)
+    }
+    m: dict[str, any] = read_manifest()
+    name: str = manifest_pkg_name(m)
+    version: str = manifest_version(m)
+    if not ver.valid_version(version) {
+        print("catpm: catpm.json needs a valid version (x.y.z), got '" + version + "'")
+        exit_now(1)
+    }
+    if not file_exists("index.catc") {
+        print("catpm: no ./index.catc here (a package is index.catc + catpm.json)")
+        exit_now(1)
+    }
+    # staging dir: dist/stage-<name>-<ver>/
+    stage: str = "dist/stage-" + name + "-" + version
+    mkdir("dist")
+    sh_die("rm -rf '" + stage + "'", "clean stage")
+    mkdir(stage)
+    copy_file("index.catc", stage + "/index.catc")
+    copy_file(MANIFEST, stage + "/" + MANIFEST)
+    # extra files from optional "files": [...] list
+    files: list[any] = []
+    if m.contains("files") {
+        fv: any = m.get("files", None)
+        files = fv
+    }
+    fi: int = 0
+    while fi < len(files) {
+        fn: str = str(files[fi])
+        if not file_exists(fn) {
+            print("catpm: extra file listed in catpm.json not found: " + fn)
+            exit_now(1)
+        }
+        sh_die("mkdir -p '" + stage + "/" + parent_dir(fn) + "' && cp '" + fn + "' '" + stage + "/" + fn + "'", "copy " + fn)
+        fi = fi + 1
+    }
+    out: str = "dist/" + name + "-" + version + ".cpkg"
+    sh_die("tar -czf '" + out + "' -C '" + stage + "' index.catc " + MANIFEST + " $(cd '" + stage + "' && find . -mindepth 1 -not -name index.catc -not -name " + MANIFEST + " -not -path './dist*' | sed 's|^\\./||')", "pack tar")
+    sh_die("rm -rf '" + stage + "'", "clean stage")
+    sha: str = sha256_of(out)
+    sz: int = file_size(out)
+    print("catpm: packed " + name + "@" + version + " -> " + out)
+    print("  size: " + str(sz) + " bytes   sha256: " + sha)
+}
+
+def parent_dir(p: str) -> str {
+    i: int = p.rfind("/")
+    if i < 0 {
+        return "."
+    }
+    return p[0:i]
+}
+
+def file_size(p: str) -> int {
+    st: dict[str, any] = file_stat(p)
+    return int(st.get("size", 0))
+}
+
+# ---------- publish (local registry dir) ----------
+
+def cmd_publish(regdir: str) {
+    if not isdir(regdir) {
+        print("catpm: registry directory not found: " + regdir)
+        exit_now(1)
+    }
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here (run inside a package)")
+        exit_now(1)
+    }
+    m: dict[str, any] = read_manifest()
+    name: str = manifest_pkg_name(m)
+    version: str = manifest_version(m)
+    cpkg: str = "dist/" + name + "-" + version + ".cpkg"
+    if not file_exists(cpkg) {
+        print("catpm: " + cpkg + " not found; run 'catpm pack' first")
+        exit_now(1)
+    }
+    sha: str = sha256_of(cpkg)
+    # index.json update (or create)
+    idx: dict[str, any] = {}
+    ipath: str = regdir + "/index.json"
+    if file_exists(ipath) {
+        f: File = file(ipath, "r")
+        idx = json_loads(f.read())
+        f.close()
+    } else {
+        idx.put("packages", {})
+    }
+    pkgs: dict[str, any] = util.get_dict(idx, "packages")
+    if not pkgs.contains(name) {
+        pkgs.put(name, {})
+    }
+    vers: dict[str, any] = util.get_dict(pkgs, name)
+    entry: dict[str, any] = {}
+    entry.put("path", name + "/" + name + "-" + version + ".cpkg")
+    entry.put("sha256", sha)
+    # embed deps for layer-2 resolution without downloading the package
+    deps: dict[str, any] = util.get_dict(m, "deps")
+    entry.put("deps", deps)
+    vers.put(version, entry)
+    pkgs.put(name, vers)
+    idx.put("packages", pkgs)
+    # write index then copy package
+    mkdir(regdir + "/" + name)
+    copy_file(cpkg, regdir + "/" + name + "/" + name + "-" + version + ".cpkg")
+    o: File = file(ipath, "w")
+    o.write(json_dumps(idx))
+    o.write("\n")
+    o.close()
+    print("catpm: published " + name + "@" + version)
+    print("  -> " + regdir + "/" + name + "/" + name + "-" + version + ".cpkg")
+    print("  -> " + ipath + " updated (sha256 " + sha[0:16] + "...)")
+}
+
+def exit_now(code: int) {
+    exit(code)
+}

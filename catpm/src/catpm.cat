@@ -1,0 +1,493 @@
+# ============================================================
+# catpm — a tiny dependency package manager for CatBase v0.1.8
+# written in CatBase itself, compiled by catcc to a native binary
+#
+# layout it manages inside a project:
+#   catpm.json      dependency manifest (created by `init`, edited by `add`)
+#   catpm.lock      resolved install list (name version deps-of)
+#   deps/<name>/    installed packages (vendored source)
+#     index.catc    package entry (its own deps import via ../<dep>/index.catc)
+#
+# registry layout (a plain directory, default $CATPM_REGISTRY or ./registry):
+#   registry/<name>/<version>/index.catc    package source
+#   registry/<name>/<version>/manifest.json {"name":..,"version":..,"deps":{..}}
+#
+# usage: catpm <command> [args...]
+#   init                     create catpm.json
+#   add <name> [version]     add direct dep + write lock + install
+#   install                  install everything in catpm.json (re-resolves)
+#   list                     list installed packages and versions
+#   remove <name>            drop direct dep, prune, rewrite lock
+# ============================================================
+
+import ./util.catc as util
+
+CATPM_VERSION: str = "0.1.0"
+MANIFEST: str = "catpm.json"
+LOCKFILE: str = "catpm.lock"
+DEPSDIR: str = "deps"
+
+def main(args: list[str]) {
+    if len(args) < 1 {
+        usage()
+        return
+    }
+    cmd: str = args[0]
+    if cmd == "init" {
+        cmd_init()
+    } else if cmd == "add" {
+        if len(args) < 2 {
+            print("catpm: 'add' needs a package name")
+            return
+        }
+        ver: str = "latest"
+        if len(args) >= 3 {
+            ver = args[2]
+        }
+        cmd_add(args[1], ver)
+    } else if cmd == "install" {
+        cmd_install()
+    } else if cmd == "list" {
+        cmd_list()
+    } else if cmd == "remove" {
+        if len(args) < 2 {
+            print("catpm: 'remove' needs a package name")
+            return
+        }
+        cmd_remove(args[1])
+    } else if cmd == "--version" {
+        print("catpm " + CATPM_VERSION + " (for CatBase 0.1.8)")
+    } else {
+        print("catpm: unknown command '" + cmd + "'")
+        usage()
+    }
+}
+
+def usage() {
+    print("usage: catpm <command> [args]")
+    print("  init                  create " + MANIFEST + " in the current directory")
+    print("  add <name> [version]  add a dependency and install it (with its deps)")
+    print("  install               install all dependencies from " + MANIFEST)
+    print("  list                  list installed packages and versions")
+    print("  remove <name>         remove a direct dependency and prune orphans")
+    print("  --version             show catpm version")
+}
+
+# ---------- registry location ----------
+
+def registry_root() -> str {
+    env: str = getenv("CATPM_REGISTRY")
+    if env != "" {
+        return env
+    }
+    return "registry"
+}
+
+# ---------- manifest ----------
+
+def manifest_exists() -> bool {
+    return file_exists(MANIFEST)
+}
+
+def read_manifest() -> dict[str, any] {
+    f: File = file(MANIFEST, "r")
+    content: str = f.read()
+    f.close()
+    return json_loads(content)
+}
+
+def write_manifest(m: dict[str, any]) {
+    f: File = file(MANIFEST, "w")
+    f.write(json_dumps(m))
+    f.write("\n")
+    f.close()
+}
+
+def empty_manifest() -> dict[str, any] {
+    m: dict[str, any] = {}
+    m.put("name", "my-project")
+    m.put("catpm", CATPM_VERSION)
+    m.put("deps", {})
+    return m
+}
+
+# ---------- registry access ----------
+
+# registry manifest path for name@version
+def reg_manifest_path(name: str, version: str) -> str {
+    return registry_root() + "/" + name + "/" + version + "/manifest.json"
+}
+
+def reg_index_path(name: str, version: str) -> str {
+    return registry_root() + "/" + name + "/" + version + "/index.catc"
+}
+
+# read {"name":..,"version":..,"deps":{name:version}} from the registry
+def read_reg_manifest(name: str, version: str) -> dict[str, any] {
+    p: str = reg_manifest_path(name, version)
+    if not file_exists(p) {
+        print("catpm: package not found in registry: " + name + "@" + version)
+        print("  looked at: " + p)
+        exit_now(1)
+    }
+    f: File = file(p, "r")
+    content: str = f.read()
+    f.close()
+    return json_loads(content)
+}
+
+# resolve "latest" to the highest version directory present
+def resolve_version(name: str, wanted: str) -> str {
+    if wanted != "latest" {
+        return wanted
+    }
+    dir: str = registry_root() + "/" + name
+    if not isdir(dir) {
+        print("catpm: package not found in registry: " + name + " (no " + dir + ")")
+        exit_now(1)
+    }
+    names: list[str] = listdir(dir)
+    best: str = ""
+    i: int = 0
+    while i < len(names) {
+        cand: str = names[i]
+        # only version-looking dirs (digits first) count
+        if len(cand) > 0 and is_digit(cand[0]) {
+            if best == "" {
+                best = cand
+            } else if version_greater(cand, best) {
+                best = cand
+            }
+        }
+        i = i + 1
+    }
+    if best == "" {
+        print("catpm: no versions found for " + name + " under " + dir)
+        exit_now(1)
+    }
+    return best
+}
+
+def is_digit(c: str) -> bool {
+    if c == "0" { return True }
+    if c == "1" { return True }
+    if c == "2" { return True }
+    if c == "3" { return True }
+    if c == "4" { return True }
+    if c == "5" { return True }
+    if c == "6" { return True }
+    if c == "7" { return True }
+    if c == "8" { return True }
+    if c == "9" { return True }
+    return False
+}
+
+# lexicographic-by-dot-segment compare, numeric where possible: a > b?
+def version_greater(a: str, b: str) -> bool {
+    avs: list[str] = a.split(".")
+    bvs: list[str] = b.split(".")
+    n: int = len(avs)
+    if len(bvs) > n {
+        n = len(bvs)
+    }
+    i: int = 0
+    while i < n {
+        av: int = 0
+        bv: int = 0
+        if i < len(avs) {
+            av = int(avs[i])
+        }
+        if i < len(bvs) {
+            bv = int(bvs[i])
+        }
+        if av > bv {
+            return True
+        }
+        if av < bv {
+            return False
+        }
+        i = i + 1
+    }
+    return False
+}
+
+# ---------- dependency resolution ----------
+# BFS from the direct deps in the manifest; resolves at least one level of
+# transitive deps (repeats until no new package appears), keeps the FIRST
+# version chosen for a name (simple "first wins" conflict policy, recorded
+# as a warning when a later package wants a different one).
+
+# resolved: dict[name -> version]; order: install order (deps before users not
+# required by catcc, but stable output matters for the lock file)
+def resolve_all(direct: dict[str, str], resolved: dict[str, str], order: list[str]) -> list[str] {
+    warnings: list[str] = []
+    queue: list[str] = []
+    ks: list[str] = direct.keys()
+    i: int = 0
+    while i < len(ks) {
+        resolved.put(ks[i], direct[ks[i]])
+        queue.append(ks[i])
+        i = i + 1
+    }
+    qi: int = 0
+    while qi < len(queue) {
+        name: str = queue[qi]
+        qi = qi + 1
+        want: str = resolved[name]
+        ver: str = resolve_version(name, want)
+        rm: dict[str, any] = read_reg_manifest(name, ver)
+        order.append(name + "@" + ver)
+        # remember the concrete version (latest -> pinned)
+        resolved.put(name, ver)
+        deps: dict[str, any] = util.get_dict(rm, "deps")
+        dk: list[str] = deps.keys()
+        j: int = 0
+        while j < len(dk) {
+            depname: str = dk[j]
+            depver: str = util.get_str(deps, depname, "latest")
+            if resolved.contains(depname) {
+                have: str = resolved[depname]
+                if have != depver {
+                    warnings.append(depname + ": wanted " + depver + " by " + name + ", keeping " + have)
+                }
+            } else {
+                resolved.put(depname, depver)
+                queue.append(depname)
+            }
+            j = j + 1
+        }
+    }
+    return warnings
+}
+
+# ---------- install (vendor into deps/) ----------
+
+def install_one(name: str, version: str) {
+    src: str = reg_index_path(name, version)
+    if not file_exists(src) {
+        print("catpm: registry entry missing index.catc for " + name + "@" + version)
+        print("  looked at: " + src)
+        exit_now(1)
+    }
+    dst_dir: str = DEPSDIR + "/" + name
+    mkdir(dst_dir)
+    f: File = file(src, "r")
+    body: str = f.read()
+    f.close()
+    out: File = file(dst_dir + "/index.catc", "w")
+    out.write(body)
+    out.close()
+    print("  installed " + name + "@" + version + " -> " + dst_dir + "/index.catc")
+}
+
+def write_lock(order: list[str], warnings: list[str]) {
+    f: File = file(LOCKFILE, "w")
+    f.write("# catpm lock file (generated, do not edit)\n")
+    f.write("# format: name version\n")
+    i: int = 0
+    while i < len(order) {
+        pair: list[str] = order[i].split("@")
+        f.write(pair[0] + " " + pair[1] + "\n")
+        i = i + 1
+    }
+    if len(warnings) > 0 {
+        f.write("# conflicts:\n")
+        j: int = 0
+        while j < len(warnings) {
+            f.write("# " + warnings[j] + "\n")
+            j = j + 1
+        }
+    }
+    f.close()
+}
+
+def read_lock() -> dict[str, str] {
+    out: dict[str, str] = {}
+    if not file_exists(LOCKFILE) {
+        return out
+    }
+    f: File = file(LOCKFILE, "r")
+    content: str = f.read()
+    f.close()
+    lines: list[str] = content.split("\n")
+    i: int = 0
+    while i < len(lines) {
+        ln: str = lines[i].strip()
+        if ln != "" {
+            if ln[0] != "#" {
+                parts: list[str] = ln.split(" ")
+                if len(parts) >= 2 {
+                    out.put(parts[0], parts[1])
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# ---------- commands ----------
+
+def cmd_init() {
+    if manifest_exists() {
+        print("catpm: " + MANIFEST + " already exists here")
+        return
+    }
+    write_manifest(empty_manifest())
+    print("catpm: created " + MANIFEST)
+    print("  add deps with: catpm add <name> [version]")
+}
+
+def cmd_add(name: str, wanted: str) {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    # validate against the registry BEFORE touching the manifest, so a
+    # failed add does not leave a phantom entry behind
+    ver: str = resolve_version(name, wanted)
+    read_reg_manifest(name, ver)
+    m: dict[str, any] = read_manifest()
+    deps: dict[str, any] = util.get_dict(m, "deps")
+    deps.put(name, ver)
+    m.put("deps", deps)
+    write_manifest(m)
+    print("catpm: added " + name + "@" + ver + " to " + MANIFEST)
+    do_install()
+}
+
+def cmd_install() {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
+        exit_now(1)
+    }
+    do_install()
+}
+
+def do_install() {
+    m: dict[str, any] = read_manifest()
+    direct_any: dict[str, any] = util.get_dict(m, "deps")
+    direct: dict[str, str] = {}
+    dk: list[str] = direct_any.keys()
+    i: int = 0
+    while i < len(dk) {
+        direct.put(dk[i], util.get_str(direct_any, dk[i], "latest"))
+        i = i + 1
+    }
+    if len(direct) == 0 {
+        print("catpm: no dependencies in " + MANIFEST + " (writing empty lock, pruning)")
+        f: File = file(LOCKFILE, "w")
+        f.write("# catpm lock file (generated, do not edit)\n")
+        f.write("# format: name version\n")
+        f.close()
+        prune()
+        return
+    }
+    resolved: dict[str, str] = {}
+    order: list[str] = []
+    print("catpm: resolving dependencies (registry: " + registry_root() + ")")
+    warnings: list[str] = resolve_all(direct, resolved, order)
+    print("catpm: resolved " + str(len(order)) + " package(s):")
+    j: int = 0
+    while j < len(order) {
+        print("  - " + order[j])
+        j = j + 1
+    }
+    k: int = 0
+    while k < len(warnings) {
+        print("  ! conflict " + warnings[k])
+        k = k + 1
+    }
+    print("catpm: installing into ./" + DEPSDIR + "/")
+    j = 0
+    while j < len(order) {
+        pair: list[str] = order[j].split("@")
+        install_one(pair[0], pair[1])
+        j = j + 1
+    }
+    write_lock(order, warnings)
+    print("catpm: wrote " + LOCKFILE)
+}
+
+def cmd_list() {
+    if not isdir(DEPSDIR) {
+        print("catpm: no ./" + DEPSDIR + "/ directory (nothing installed)")
+        return
+    }
+    lock: dict[str, str] = read_lock()
+    names: list[str] = listdir(DEPSDIR)
+    # stable display: sort by name (insertion sort, small n)
+    i: int = 1
+    while i < len(names) {
+        key: str = names[i]
+        j2: int = i - 1
+        while j2 >= 0 and util.str_greater(names[j2], key) {
+            names[j2 + 1] = names[j2]
+            j2 = j2 - 1
+        }
+        names[j2 + 1] = key
+        i = i + 1
+    }
+    print("installed packages in ./" + DEPSDIR + ":")
+    i = 0
+    while i < len(names) {
+        n: str = names[i]
+        if isdir(DEPSDIR + "/" + n) {
+            v: str = lock.get(n, "?")
+            tag: str = ""
+            if v == "?" {
+                tag = " (no lock entry)"
+            }
+            print("  " + n + "  " + v + tag)
+        }
+        i = i + 1
+    }
+}
+
+def cmd_remove(name: str) {
+    if not manifest_exists() {
+        print("catpm: no " + MANIFEST + " here")
+        exit_now(1)
+    }
+    m: dict[str, any] = read_manifest()
+    deps: dict[str, any] = util.get_dict(m, "deps")
+    if not deps.contains(name) {
+        print("catpm: " + name + " is not a direct dependency")
+        exit_now(1)
+    }
+    # dict.remove(key) is supported (docs: silently ignores missing keys)
+    deps.remove(name)
+    m.put("deps", deps)
+    write_manifest(m)
+    print("catpm: removed " + name + " from " + MANIFEST)
+    # reinstall from the reduced manifest, then prune anything no longer wanted
+    do_install()
+    prune()
+}
+
+# delete deps/<name> for packages not in the lock file (leftovers from removes)
+def prune() {
+    lock: dict[str, str] = read_lock()
+    if not isdir(DEPSDIR) {
+        return
+    }
+    names: list[str] = listdir(DEPSDIR)
+    i: int = 0
+    while i < len(names) {
+        n: str = names[i]
+        if isdir(DEPSDIR + "/" + n) {
+            if not lock.contains(n) {
+                print("catpm: pruned " + DEPSDIR + "/" + n + " (no longer needed)")
+                # no rmdir builtin in v0.1.8; remove the file, then try rmdir via exec
+                delete_file(DEPSDIR + "/" + n + "/index.catc")
+                exec("rmdir " + DEPSDIR + "/" + n)
+            }
+        }
+        i = i + 1
+    }
+}
+
+def exit_now(code: int) {
+    # exit(code) builtin: process terminates immediately with code & 0xFF
+    exit(code)
+}
