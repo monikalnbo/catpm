@@ -1,0 +1,45 @@
+
+==================================================
+== BUILD LOG v4 — catpm 0.4.0 2026-11-10 07:42:51Z
+==================================================
+catcc: CatBase Compiler (catcc) 0.1.8   zig: 0.14.1
+
+
+==================================================
+== [1/4] version engine unit tests (ver.catc, 44 assertions incl. AND lists)
+==================================================
+Compilation successful.
+ALL VER TESTS PASSED
+exit=0
+
+
+==================================================
+== [2/4] catpm v0.4 -> native binary (fresh compile)
+==================================================
+Compilation successful.
+compile wall=11.05 s
+
+
+==================================================
+== [3/4] artifacts
+==================================================
+catpm4 binary: 259536 bytes
+file(1): /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/catpm4: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 2.0.0, stripped
+catpm 0.4.0 (for CatBase 0.1.8)
+
+
+==================================================
+== [4/4] new packages compiled standalone (timex + randx behavior probe)
+==================================================
+Compilation successful.
+timex.iso8601() =  2026-11-10T07:43:09Z
+timex.stamp('hello') =  [07:43:09] hello
+timex.shout_stamp('shout') =  [07:43:09] SHOUT!
+timex.epoch() =  1794296589
+timex.days_between(e, e + 90000) =  1
+randx seed42 first three between(1,100):  5 8 52
+reseed 42 -> same first two:  5 8
+randx.die6() =  2
+randx.pick(names) =  carol
+stringx.shout('done') =  DONE!
+exit=0

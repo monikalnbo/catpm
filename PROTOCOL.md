@@ -78,10 +78,12 @@ catpm 的包生态由四层协议构成。每层只依赖下一层，可以单�
 | `<2.0.0` | 上界（不含） | — |
 | `<=2.0.0` | 上界（含） | — |
 | `latest` 或缺省 | 任意，取最高 | — |
+| `*` | 任意，取最高（v0.4 新增，`latest` 的同义词） | — |
+| `>=0.2.0,<0.4.0` | **逗号 AND 列表**（v0.4 新增）：每个成员都须满足，等价于区间交集 | `[0.2.0, 0.4.0)` |
 
-命令行写法：`catpm add mathx@^1.2.0`（`@` 后整体是说明符）；manifest 里存说明符原文。
+命令行写法：`catpm add mathx@^1.2.0`（`@` 后整体是说明符）；manifest 里存说明符原文。AND 列表成员间空格可有可无（`>=0.2.0, <0.4.0` 同义）；成员可混用任意已支持写法（如 `^0.3.0,<0.4.0`、`0.2.0,*`）。
 
-**明确不支持**（不虚构）：`*`、`x` 通配（`1.x`）、`||` 或关系、逗号 AND 列表、`~=`（pip 专用）、预发布后缀（`1.0.0-rc1`）、`latest-1`。实现于 `ver.catc` 的 `satisfies()`，测试 `test_ver.cat` 29 项断言。
+**明确不支持**（不虚构）：`x` 通配（`1.x`）、`||` 或关系、`~=`（pip 专用）、预发布后缀（`1.0.0-rc1`）、`latest-1`。原因：`x` 通配需把版本段当模式匹配（当前版本引擎是纯区间比较）；`||` 需把解析结果从单区间改为区间并集（选择规则「取满足说明符的最高版本」将不再良定）；预发布需在比较器里加预发布段排序规则——三者均超出 v0.4 版本引擎（`ver.catc`）的设计范围，留待后续版本。测试 `test_ver.cat` 44 项断言。
 
 ### 2.3 选择规则
 
@@ -107,6 +109,9 @@ stringx 0.3.0
 - `list` 显示的版本来自 lock；lock 缺项显示 `?`。
 - `remove` 后以新 lock 为「应存在集合」prune `deps/`。
 - `catpm lock` 命令：只解析写 lock，不安装（对标 `npm install --package-lock-only` / `pip freeze` 前置步骤）。
+- **`install` 是 lock-exact 的**（v0.4 起，对标 `npm ci`）：lock 存在且覆盖 catpm.json 全部直接依赖时，严格按 lock 逐包安装（含 sha256 校验与 prune），**不重新解析**——lock 手改过也照 lock 装（漂移被尊重）；lock 缺失或不完整时回退到全量重解析并重写 lock（对标 `npm install`）。
+- `catpm update`（v0.4 新增）：忽略 lock 重新解析，按 manifest 说明符重写 lock 并安装（对标 `npm update`）。
+- `catpm outdated`（v0.4 新增）：对每个已装包查源索引最新版，`current != newest` 标 `-> upgradable`（对标 `npm outdated` / `pip list -o`）。
 
 ---
 
@@ -231,7 +236,15 @@ https://raw.githubusercontent.com/u/r/main/registry    prio=1   pkg=mathx,loganx
 
 ### 4.4 把 git 仓库当远程源（catpm 自身生态的用法）
 
-远程源不需要专门的服务器：任何能按固定 URL 提供 `index.json` 与 `.cpkg` 文件的地方都是源。GitHub 仓库即满足——`main` 分支的 `registry/` 目录通过 `https://raw.githubusercontent.com/<user>/<repo>/main/registry/index.json` 即为索引 URL。发布 = 向该仓库提交新的 `.cpkg` 与更新后的 `index.json`（catpm 仓库里的 `scripts/publish-remote.md` 给出三步流程）。
+远程源不需要专门的服务器：任何能按固定 URL 提供 `index.json` 与 `.cpkg` 文件的地方都是源。GitHub 仓库即满足。
+
+**v0.4 起的仓库分离形态**：包集中在专用仓库 **[catpm-registry](https://github.com/monikalnbo/catpm-registry)**（index.json 与 `<name>/<name>-<ver>.cpkg` 放仓库根），catpm 主仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。默认 `package.where` 指向：
+
+```
+https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+```
+
+发布 = `catpm pack` → `catpm publish <registry-仓库检出目录>` → `git push`。注意 registry 仓库的 `.gitignore` 不能含 `*.cpkg` 规则（否则包体进不了 git 树，index.json 里指向 404——v0.3 发布 loganx 时踩过，靠 `git add -f` 补救；catpm-registry 的 .gitignore 只忽略 `.catpm-cache/`）。
 
 ---
 
@@ -242,8 +255,11 @@ https://raw.githubusercontent.com/u/r/main/registry    prio=1   pkg=mathx,loganx
 | 初始化 | — | `npm init` | `catpm init` |
 | 装一个包 | `pip install pkg` | `npm install pkg` | `catpm add pkg` |
 | 装指定版本 | `pip install pkg==1.2.3` | `npm i pkg@1.2.3` | `catpm add pkg@1.2.3` |
-| 范围版本 | `pip install pkg>=1,<2` | `npm i pkg@^1.2.3` | `catpm add pkg@^1.2.3`（也支持 `~` `>=` `<` `>` `<=`） |
-| 按清单全装 | `pip install -r requirements.txt` | `npm install` | `catpm install` |
+| 范围版本 | `pip install pkg>=1,<2` | `npm i pkg@^1.2.3` | `catpm add pkg@^1.2.3`（也支持 `~` `>=` `<` `>` `<=`、逗号 AND 列表、`*`） |
+| 按清单全装 | `pip install -r requirements.txt` | `npm install` | `catpm install`（lock 存在时为 lock-exact，对标 `npm ci`） |
+| 按锁精确还原 | （无） | `npm ci` | `catpm install`（lock 完整时自动走 lock-exact 路径） |
+| 升级到语义允许的最新 | `pip install -U pkg` | `npm update` | `catpm update`（重解析重写 lock） |
+| 查过期 | `pip list -o` | `npm outdated` | `catpm outdated` |
 | 只生成锁 | — | `npm i --package-lock-only` | `catpm lock` |
 | 列出已装 | `pip list` | `npm ls` | `catpm list` |
 | 移除 | `pip uninstall pkg` | `npm uninstall pkg` | `catpm remove pkg`（自动清孤儿） |

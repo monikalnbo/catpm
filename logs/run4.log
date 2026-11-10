@@ -1,0 +1,221 @@
+
+==================================================
+== RUN LOG v4 — commands / version control / repo split / installers  2026-11-10 07:43:09Z
+==================================================
+catpm: catpm 0.4.0 (for CatBase 0.1.8)
+
+
+==================================================
+== [2/6] BASIC COMMAND SWEEP (source: local registry4 = same tree pushed to catpm-registry)
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+
+$ catpm add randx
+  catpm: added randx 'latest' to catpm.json (resolves to 0.1.0)
+  catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4)
+  catpm: resolved 3 package(s):
+    - randx@0.1.0
+    - timex@0.1.0
+    - stringx@0.3.0
+  catpm: installing into ./deps/
+    copying randx@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/randx/randx-0.1.0.cpkg
+    installed randx@0.1.0 (sha256 ok) -> deps/randx/index.catc
+    copying timex@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/timex/timex-0.1.0.cpkg
+    installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+    copying stringx@0.3.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/stringx/stringx-0.3.0.cpkg
+    installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  catpm: wrote catpm.lock
+exit=0
+
+$ catpm list
+installed packages in ./deps:
+  randx  0.1.0
+  stringx  0.3.0
+  timex  0.1.0
+
+$ catpm sources
+catpm: sources from /tmp/v4_where
+  prio kind root                                        serves       status
+  0     dir  /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4(all)       ok
+
+--- lock-exact restore: rm -rf deps .catpm-cache; catpm install ---
+  catpm: installing exactly from catpm.lock (lock-exact; no re-resolution)
+    copying randx@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/randx/randx-0.1.0.cpkg
+    installed randx@0.1.0 (sha256 ok) -> deps/randx/index.catc
+    copying stringx@0.3.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/stringx/stringx-0.3.0.cpkg
+    installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+    copying timex@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/timex/timex-0.1.0.cpkg
+    installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  catpm: lock restore complete (3 package(s))
+
+$ catpm remove timex   (timex is transitive dep of randx -> must refuse, stringx stays)
+catpm: timex is not a direct dependency
+$ catpm remove randx   (direct dep: goes + orphans timex; stringx stays: still needed by manifest? no -> check prune)
+catpm: no dependencies in catpm.json (writing empty lock, pruning)
+catpm: pruned deps/timex (no longer needed)
+catpm: pruned deps/stringx (no longer needed)
+catpm: pruned deps/randx (no longer needed)
+deps after remove randx:
+
+--- pack/publish roundtrip with a scratch package ---
+  catpm: packed mypkg@9.9.9 -> dist/mypkg-9.9.9.cpkg
+    size: 257 bytes   sha256: c40596ed2c624e6144a029e144d439a901e5199600b1c415e984b3f1a69e0edb
+  catpm: published mypkg@9.9.9
+    -> /tmp/v4_reg_tmp/mypkg/mypkg-9.9.9.cpkg
+    -> /tmp/v4_reg_tmp/index.json updated (sha256 c40596ed2c624e61...)
+index.json of scratch registry:
+  {"packages":{"mypkg":{"9.9.9":{"sha256":"c40596ed2c624e6144a029e144d439a901e5199600b1c415e984b3f1a69e0edb","deps":{},"path":"mypkg/mypkg-9.9.9.cpkg"}}}}
+
+==================================================
+== [3/6] VERSION CONTROL: AND / * / exact / up-downgrade / lock semantics
+==================================================
+$ catpm add 'mathx@>=0.2.0,<0.4.0'   (comma AND: only 0.3.0 qualifies)
+catpm: added mathx '>=0.2.0,<0.4.0' to catpm.json (resolves to 0.3.0)
+mathx 0.3.0
+
+$ catpm add 'mathx@*'               (star = any, resolves highest)
+catpm: added mathx '*' to catpm.json (resolves to 0.4.0)
+mathx 0.4.0
+
+$ catpm add 'mathx@0.2.0'           (exact pin -> downgrade)
+catpm: added mathx '0.2.0' to catpm.json (resolves to 0.2.0)
+mathx 0.2.0
+
+--- drift honored: hand-edit lock 0.2.0 -> 0.3.0; install must obey lock ---
+catpm: installing exactly from catpm.lock (lock-exact; no re-resolution)
+  installed mathx@0.3.0 (sha256 ok) -> deps/mathx/index.catc
+mathx 0.3.0
+
+$ catpm outdated
+  package   current   newest
+  mathx     0.3.0     0.4.0  -> upgradable
+  stringx   0.3.0     0.3.0
+
+$ catpm update                     (re-resolve: 0.2.0 pinned in manifest stays)
+mathx 0.2.0
+
+--- stale-file fix: upgrade must not leave old files (filer 1.0.0 with src/ -> 1.1.0 without) ---
+filer 1.0.0 files:
+  deps/filer/catpm.json
+  deps/filer/index.catc
+  deps/filer/src/extra.catc
+filer 1.1.0 files (src/extra.catc must be gone):
+  deps/filer/catpm.json
+  deps/filer/index.catc
+
+--- sha256 tamper detection still intact (index sha zeroed) ---
+    index:  0000000000000000000000000000000000000000000000000000000000000000
+    actual: b107d3a2bdb3250bd94c3d8453230952b6944cce5b26089111f83acfa48b10a9
+exit=1 (expect 1)
+
+==================================================
+== [4/6] REPO SPLIT: clean dir + only catpm4 & package.where -> pure HTTPS from catpm-registry
+==================================================
+--- package.where (as shipped in the repo) ---
+  # catpm source list v1 (apt sources.list style)
+  # <dir-or-URL> [prio=N] [pkg=name1,name2]
+  # default source: the dedicated package registry repository
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+
+$ ./bin/catpm sources
+  catpm: sources from /tmp/live4/bin/package.where
+    prio kind root                                        serves       status
+    0     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+
+$ ./bin/catpm init && ./bin/catpm add randx   (timex+stringx come transitively)
+  catpm: added randx 'latest' to catpm.json (resolves to 0.1.0)
+  catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+  catpm: resolved 3 package(s):
+    - randx@0.1.0
+    - timex@0.1.0
+    - stringx@0.3.0
+  catpm: installing into ./deps/
+    downloading randx@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/randx/randx-0.1.0.cpkg
+    installed randx@0.1.0 (sha256 ok) -> deps/randx/index.catc
+    downloading timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+    installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+    downloading stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+    installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  catpm: wrote catpm.lock
+exit=0
+
+$ ./bin/catpm add 'mathx@>=0.2.0,<0.4.0'      (AND list over remote index)
+  catpm: added mathx '>=0.2.0,<0.4.0' to catpm.json (resolves to 0.3.0)
+  catpm: resolved 4 package(s):
+    installed randx@0.1.0 (sha256 ok) -> deps/randx/index.catc
+    installed mathx@0.3.0 (sha256 ok) -> deps/mathx/index.catc
+    installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+    installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  lock: mathx 0.3.0
+
+$ catcc main.cat -o app && ./app
+  Compilation successful.
+  app: 103600 bytes
+== catpm v0.4 live demo (source: catpm-registry repo) ==
+timex.iso8601() =  2026-11-10T07:43:15Z
+timex.stamp('event') =  [07:43:15] event
+randx seed42 between(1,100) x3 =  5 8 52
+randx.die6() =  3
+mathx.fib(12) =  144
+mathx.loud_double(21) =  42!
+  exit=0
+
+==================================================
+== [5/6] INSTALLERS: sh / bash / zsh / fish
+==================================================
+--- syntax checks ---
+  sh -n install.sh: OK
+  bash -n install.sh: OK
+  zsh -n install.sh: OK
+  fish --no-execute install.fish: OK
+
+--- real installs from GitHub raw (clean HOMEs, restricted PATH) ---
+$ sh:   curl .../install.sh | sh
+  catpm-install: downloading catpm (catpm4) + package.where
+  catpm-install: installed: /tmp/h1/.local/bin/catpm
+$ bash: curl .../install.sh | bash
+  catpm-install: downloading catpm (catpm4) + package.where
+  catpm-install: installed: /tmp/h2/.local/bin/catpm
+$ zsh:  curl .../install.sh | zsh
+  catpm-install: downloading catpm (catpm4) + package.where
+  catpm-install: installed: /tmp/h3/.local/bin/catpm
+$ fish: curl .../install.fish | source
+  catpm-install: downloading catpm (catpm4) + package.where
+  catpm-install: installed: /tmp/h4/.local/bin/catpm
+
+--- verify all four installs ---
+  /tmp/h1/.local/bin/catpm: catpm 0.4.0 (for CatBase 0.1.8) (package.where->catpm-registry: 1)
+  /tmp/h2/.local/bin/catpm: catpm 0.4.0 (for CatBase 0.1.8) (package.where->catpm-registry: 1)
+  /tmp/h3/.local/bin/catpm: catpm 0.4.0 (for CatBase 0.1.8) (package.where->catpm-registry: 1)
+  /tmp/h4/.local/bin/catpm: catpm 0.4.0 (for CatBase 0.1.8) (package.where->catpm-registry: 1)
+
+--- PATH snippet works: bash with exported PATH uses installed catpm ---
+  catpm: resolved 2 package(s):
+    installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+    installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+
+==================================================
+== [6/6] RAW REACHABILITY (curl HTTP status, split repos)
+==================================================
+--- catpm (PM repo) ---
+  200  catpm/catpm4
+  200  catpm/package.where
+  200  install.sh
+  200  install.fish
+  200  PROTOCOL.md
+  200  README.md
+--- catpm-registry (packages) ---
+  200  index.json
+  200  fmtx/fmtx-0.1.0.cpkg
+  200  loganx/loganx-0.1.0.cpkg
+  200  mathx/mathx-0.2.0.cpkg
+  200  mathx/mathx-0.3.0.cpkg
+  200  mathx/mathx-0.4.0.cpkg
+  200  randx/randx-0.1.0.cpkg
+  200  stringx/stringx-0.3.0.cpkg
+  200  timex/timex-0.1.0.cpkg
+
+END OF RUN LOG v4

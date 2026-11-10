@@ -3,7 +3,7 @@
 catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单，一应俱全——全部用一门新语言实现。
 
 > 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0）。
-> 本仓库自身就是一个可用的远程源：`registry/` 目录 + raw URL（见下文「把本仓库当源用」）。
+> **v0.4 起仓库分离**：包集中在专用仓库 **[monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**；本仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。
 
 ---
 
@@ -12,9 +12,9 @@ catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Z
 | | |
 |---|---|
 | 语言 | CatBase v0.1.8（本机验证包；`catcc 0.1.8` + Zig 0.14.1 后端） |
-| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.3）+ `util.catc` + `ver.catc`（版本引擎） |
-| 二进制 | `catpm/catpm3`（v0.3.0，253,840 B）；`catpm/catpm2`（v0.2.0，226,840 B），MIT 许可 |
-| 源定义 | `package.where`（apt sources.list 式多源清单，与 PM 同仓库默认生效） |
+| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.4）+ `util.catc` + `ver.catc`（版本引擎） |
+| 二进制 | `catpm/catpm4`（v0.4.0，259,536 B）；`catpm3`/`catpm2` 为旧版，MIT 许可 |
+| 源定义 | `package.where`（apt sources.list 式多源清单，默认指向 catpm-registry 仓库） |
 | 源码形态 | 源码内置（vendoring）：包以源码安装进 `deps/`，catcc 单入口编译时传递展开 import |
 
 **端到端已验证的完整链路**（真实命令与输出见 `logs/build.log`、`logs/run.log`）：
@@ -31,14 +31,48 @@ catcc main.cat -o app && ./app   引用直接+传递依赖，运行正确
 
 ## 2. 安装
 
-前置：Linux + CatBase v0.1.8（`bin/catcc`、`conf/`、`runtime/`）+ 系统 `tar`/`sha256sum`/`curl`（Linux 发行版均自带）。
+### 一键安装（sh / bash / zsh）
 
-```bash
-# 从源码构建（catcc 编译 catpm 自身）
-cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm2
+前置只有 `curl` + `tar`（Linux 发行版均自带）。装到 `~/.local/bin`（或 `CATPM_INSTALL_DIR=...` 覆盖）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/monikalnbo/catpm/main/install.sh | sh
 ```
 
-不想构建时也可直接使用仓库里已编译的 `catpm/catpm2`（x86_64 Linux ELF）。
+`install.sh` 是纯 POSIX sh（同一份脚本在 sh / bash / zsh 下真实跑过，见 `logs/run4.log` [5/6]）：下载 `catpm4` 二进制与 `package.where`（默认源：catpm-registry 仓库）放到 `~/.local/bin`，`package.where` 与二进制同目录——catpm 找源时优先读二进制旁边的清单，开箱即用。
+
+### fish
+
+```fish
+curl -fsSL https://raw.githubusercontent.com/monikalnbo/catpm/main/install.fish | source
+```
+
+### PATH 设置（装完按所用 shell 加一行）
+
+```bash
+# bash (~/.bashrc)
+export PATH="$HOME/.local/bin:$PATH"
+
+# zsh (~/.zshrc)
+export PATH="$HOME/.local/bin:$PATH"
+
+# fish (~/.config/fish/config.fish)
+fish_add_path ~/.local/bin
+```
+
+然后 `catpm --version` 验证（应输出 `catpm 0.4.0 (for CatBase 0.1.8)`）。
+
+### 从源码构建
+
+需要 CatBase v0.1.8（`bin/catcc`、`conf/`、`runtime/`）：
+
+```bash
+cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm4   # ~11 s
+```
+
+不想构建时直接用仓库里已编译的 `catpm/catpm4`（x86_64 Linux ELF）。
+
+> 说明：安装脚本只是「下载 + 放对位置」，catpm 自身运行还依赖系统 `tar`/`sha256sum`/`curl`（包管理操作用）；`catpm --version`、`catpm sources` 等纯命令无这些也能跑。
 
 ## 3. 用法
 
@@ -49,7 +83,12 @@ catpm init                        # 创建 catpm.json
 catpm add mathx                   # 最新版（多源时版本候选=并集取最高）
 catpm add 'mathx@1.2.3'           # 精确版本（同 pip 的 ==、npm 的 @1.2.3）
 catpm add 'mathx@^1.2.0'          # 范围（同 npm caret；也支持 ~ >= > < <=）
-catpm install                     # 按 catpm.json 全装（同 npm install / pip install -r）
+catpm add 'mathx@>=0.2.0,<0.4.0'  # 逗号 AND 列表（v0.4：每项都须满足）
+catpm add 'mathx@*'               # 星号 = 任意版本取最高（v0.4，latest 同义词）
+catpm install                     # lock 完整时 lock-exact 精确还原（同 npm ci）；
+                                  #   否则按 catpm.json 重解析全装（同 npm install）
+catpm update                      # 重解析 + 重写 lock + 安装（同 npm update）（v0.4）
+catpm outdated                    # current vs newest，标 -> upgradable（v0.4）
 catpm lock                        # 只解析 + 写锁，不装（同 npm i --package-lock-only）
 catpm list                        # 列出已装（同 pip list / npm ls）
 catpm remove mathx                # 移除 + 清孤儿传递依赖
@@ -98,8 +137,11 @@ def main() {
 | 初始化 | — | `npm init` | `catpm init` |
 | 装一个包 | `pip install pkg` | `npm install pkg` | `catpm add pkg` |
 | 指定版本 | `pip install pkg==1.2.3` | `npm i pkg@1.2.3` | `catpm add pkg@1.2.3` |
-| 范围版本 | `pip install pkg>=1,<2` | `npm i pkg@^1.2.3` | `catpm add pkg@^1.2.3`（`~` `>=` `<` `>` `<=` 同理） |
-| 按清单全装 | `pip install -r requirements.txt` | `npm install` | `catpm install` |
+| 范围版本 | `pip install pkg>=1,<2` | `npm i pkg@^1.2.3` | `catpm add pkg@^1.2.3`（`~` `>=` `<` `>` `<=`、逗号 AND、`*` 同理） |
+| 按清单全装 | `pip install -r requirements.txt` | `npm install` | `catpm install`（lock 完整时 lock-exact） |
+| 按锁精确还原 | （无） | `npm ci` | `catpm install`（lock 完整自动走） |
+| 升级（语义内） | `pip install -U pkg` | `npm update` | `catpm update` |
+| 查过期 | `pip list -o` | `npm outdated` | `catpm outdated` |
 | 只生成锁 | — | `npm i --package-lock-only` | `catpm lock` |
 | 列出已装 | `pip list` | `npm ls` | `catpm list` |
 | 移除 | `pip uninstall pkg` | `npm uninstall pkg` | `catpm remove pkg` |
@@ -120,42 +162,58 @@ def main() {
 | 列出源 | `cat /etc/apt/sources.list` | `catpm sources`（实测可达性） |
 | 刷新索引 | `apt update` | 每次命令实时拉各源 index.json |
 
-**说明符子集**（实测支持的）：`1.2.3`、`^1.2.3`（0 主版本锁次版本，同 npm）、`~1.2.3`、`>=` `>` `<` `<=`、`latest`。不支持 `*`/`1.x`/`||`/逗号列表/`~=`/预发布——完整表见 PROTOCOL.md §2.2，不虚构。
+**说明符子集**（实测支持的）：`1.2.3`、`^1.2.3`（0 主版本锁次版本，同 npm）、`~1.2.3`、`>=` `>` `<` `<=`、**逗号 AND 列表** `>=0.2.0,<0.4.0`（v0.4）、**`*`**（v0.4，= latest）、`latest`。不支持 `1.x`/`||`/`~=`/预发布（原因见 PROTOCOL.md §2.2）——完整表见 PROTOCOL.md §2.2，不虚构。
 
-## 5. 把本仓库当远程源用
+## 5. 仓库分离：包都在 catpm-registry（v0.4）
 
-默认 `package.where`（与 catpm 同仓库）已指向本仓库的 GitHub raw 源，开箱即用：
+**[github.com/monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**（PUBLIC）是包仓库：`index.json` + `<name>/<name>-<ver>.cpkg` 放仓库根，当前 6 包 8 版本：
+
+| 包 | 版本 | 用途 | 依赖 |
+|---|---|---|---|
+| mathx | 0.2.0 / 0.3.0 / 0.4.0 | 算术（fib、gcd、完美数等） | stringx ^0.3.0 |
+| stringx | 0.3.0 | 字符串工具（shout、capitalize…） | — |
+| fmtx | 0.1.0 | 格式化输出 | stringx ^0.3.0 |
+| loganx | 0.1.0 | 带时间戳日志 | — |
+| **timex** | 0.1.0 | **v0.4 新增**：真实时间（`iso8601()`/`epoch()`/`stamp()`/`days_between()`，经 `exec(date)`） | stringx ^0.3.0 |
+| **randx** | 0.1.0 | **v0.4 新增**：种子化确定性 PRNG（`seed`/`between`/`below`/`pick`/`die6`；LCG + 乘法混叠，无位运算可用故纯 `+ * %` 实现） | timex ^0.1.0 |
+
+本仓库（catpm）只保留 PM 本体：源码、二进制、`package.where`、README/PROTOCOL、安装脚本、日志。**v0.3 及以前放在本仓库的 `registry/`、`registry3/`、`registry-mirror/` 已整体删除（非归档）**——包体与索引全部迁移到 catpm-registry，raw 可达性实测 8/8 个 .cpkg + index.json 全 200（`logs/run4.log` [6/6]）。
+
+默认 `package.where` 已指向新仓库，开箱即用：
 
 ```bash
 catpm add mathx        # 真实 HTTPS 下载 + sha256 校验 + 缓存（无需设置任何变量）
 ```
 
-或临时用单源兼容模式：`CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm/main/registry`。
+或临时单源兼容模式：`CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm-registry/main`。
 
-发布自己的包：`catpm pack` → `catpm publish registry/` → `git push`（三步，见 `scripts/publish-remote.md`）。
+发布自己的包：`catpm pack` → `catpm publish <catpm-registry 检出目录>` → `git push`（catpm-registry 的 .gitignore 不能含 `*.cpkg`，见 PROTOCOL.md §4.4）。
 
 ## 6. 仓库布局
 
 ```
-catpm/src2/          PM 源码（catpm.cat v0.3 + ver.catc + util.catc + test_ver.cat）
-catpm/catpm3         编译好的 x86_64 Linux 二进制（v0.3.0；catpm2 为 v0.2.0）
-catpm/package.where  默认源清单（指向本仓库 GitHub raw 源）
-registry/            远程源内容（index.json + .cpkg）——本仓库即源
-registry3/           v0.3 多源演示本地源（含 loganx）
-registry-mirror/     v0.3 镜像源（mathx 0.4.0 独有，prio/pkg= 演示）
-pkgsrc/              示例包源（stringx / mathx 0.2–0.4 / fmtx / loganx，含传递与钻石依赖）
+catpm/src2/          PM 源码（catpm.cat v0.4 + ver.catc + util.catc + test_ver.cat）
+catpm/catpm4         编译好的 x86_64 Linux 二进制（v0.4.0；catpm3/catpm2 为旧版）
+catpm/package.where  默认源清单（指向 catpm-registry 仓库 GitHub raw）
+install.sh           POSIX sh 安装器（sh/bash/zsh 通用，curl | sh 一键装）
+install.fish         fish 原生安装器（curl | source）
 demo/                v0.1 演示项目；demo2/ 为 v0.2；demo_where*/ 为 v0.3（package.where）
 logs/build.log       catpm 构建记录（真实 catcc 命令、体积、耗时）
 logs/run.log         端到端演示记录（init→add→lock→编译→运行→remove）
 logs/build3.log      v0.3 构建 + 单测记录
 logs/where3.log      v0.3 package.where 六场景实测（默认源/改写切换/多源/回退/错误/编译运行）
+logs/build4.log      v0.4 构建 + 44 断言单测 + 新包行为探针
+logs/run4.log        v0.4 六段实测：命令扫描/版本控制/仓库分离/安装器/raw 可达性
 logs/syntax-probe.log CatBase v0.1.8 语法/标准库探针（含失败案例）
 scripts/e2e.sh       一键复现 build.log + run.log
 scripts/e2e_v2.sh    一键复现 v0.2 全生态
 scripts/e2e_v3.sh    一键复现 v0.3 package.where 六场景
-PROTOCOL.md          四层协议规范（§4.0 package.where）
+scripts/e2e_v4.sh    一键复现 v0.4 全部六段（含安装器与 raw 可达性）
+PROTOCOL.md          四层协议规范（§4.0 package.where；§4.4 catpm-registry）
 LICENSE              MIT
 ```
+
+（v0.3 及以前的 `registry/`、`registry3/`、`registry-mirror/`、`pkgsrc/` 已从本仓库删除——包全部迁至 [catpm-registry](https://github.com/monikalnbo/catpm-registry)；包源码在该仓库各包目录的 .cpkg 归档内。）
 
 ## 7. CatBase v0.1.8 陷阱记录（写这个 PM 时踩过的）
 
@@ -186,9 +244,10 @@ LICENSE              MIT
 bash scripts/e2e.sh        # v0.1 全流程 → logs/build.log + run.log
 bash scripts/e2e_v2.sh     # v0.2 说明符/远程源全生态 → logs/build2.log + run2.log
 bash scripts/e2e_v3.sh     # v0.3 package.where 六场景 → logs/build3.log + where3.log
+bash scripts/e2e_v4.sh     # v0.4 六段全测 → logs/build4.log + run4.log
 bash probe/run_probes.sh   # 语法探针套件 → logs/syntax-probe.log
 ```
 
 ## 9. 许可
 
-MIT（见 [LICENSE](LICENSE)）。`registry/` 里的示例包同为 MIT。
+MIT（见 [LICENSE](LICENSE)）。[catpm-registry](https://github.com/monikalnbo/catpm-registry) 里的包同为 MIT。
