@@ -1,6 +1,6 @@
 
 ==================================================
-== RUN LOG v6 — polish fixes + self-update chain  2026-11-10 08:40:45Z
+== RUN LOG v6 — polish fixes + self-update chain  2026-11-10 08:44:37Z
 ==================================================
 
 ==================================================
@@ -10,13 +10,13 @@
 catpm: added mathx '>=x' to catpm.json (resolves to 0.4.0)
   (old build wrote the junk spec into catpm.json AND resolved 0.4.0 — the bug)
 -- new 0.5.2:
-catpm: no version of mathx satisfies '>=x' (available: 0.2.0 0.3.0 0.4.0)
+catpm: no version of mathx satisfies '>=x' (available: 0.2.0 0.4.0 0.3.0)
 exit=1
-catpm: no version of mathx satisfies '^junk' (available: 0.2.0 0.3.0 0.4.0)
+catpm: no version of mathx satisfies '^junk' (available: 0.2.0 0.4.0 0.3.0)
 exit=1
-catpm: no version of mathx satisfies '!invalid' (available: 0.2.0 0.3.0 0.4.0)
+catpm: no version of mathx satisfies '!invalid' (available: 0.2.0 0.4.0 0.3.0)
 exit=1
-catpm: no version of mathx satisfies '>=0.2.0,' (available: 0.2.0 0.3.0 0.4.0)
+catpm: no version of mathx satisfies '>=0.2.0,' (available: 0.2.0 0.4.0 0.3.0)
 exit=1
 -- manifest after all rejected adds (only old build's write remains; new build touched nothing):
 {"deps":{"mathx":">=x"},"name":"f1"}
@@ -60,10 +60,13 @@ exit=0
 step0: catpm 0.5.0 (for CatBase 0.1.8)
   sha256 ok (3696c5345af36a9d...)
   candidate verified: catpm 0.5.1 (for CatBase 0.1.8)
-catpm: updated /tmp/tmp.qa3AhW9ECA/su/bin/catpm -> 0.5.1
+catpm: updated /tmp/tmp.TSkcoVvay8/su/bin/catpm -> 0.5.1
 step1: catpm 0.5.1 (for CatBase 0.1.8)
-catpm: sha256 MISMATCH for .catpm-cache/catpm/catpm-0.5.2.cpkg
-step2: catpm 0.5.1 (for CatBase 0.1.8)
+  sha256 ok (a096be0a1231de6c...)
+  candidate verified: catpm 0.5.2 (for CatBase 0.1.8)
+catpm: updated /tmp/tmp.TSkcoVvay8/su/bin/catpm -> 0.5.2
+step2: catpm 0.5.2 (for CatBase 0.1.8)
+catpm: updated /tmp/tmp.TSkcoVvay8/su/bin/catpm -> 0.5.1
 step3 (explicit downgrade): catpm 0.5.1 (for CatBase 0.1.8)
 no .new residue
 
@@ -76,5 +79,5 @@ no .new residue
 
 
 ==================================================
-== DONE run6  2026-11-10 08:40:48Z
+== DONE run6  2026-11-10 08:44:40Z
 ==================================================

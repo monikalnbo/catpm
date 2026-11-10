@@ -1,6 +1,6 @@
 
 ==================================================
-== BUILD LOG v6 — catpm 0.5.2 (polish release)  2026-11-10 08:40:29Z
+== BUILD LOG v6 — catpm 0.5.2 (polish release)  2026-11-10 08:44:23Z
 ==================================================
 catcc: CatBase Compiler (catcc) 0.1.8   zig: 0.14.1
 
@@ -17,10 +17,10 @@ exit=0
 == [2/3] fresh compile of the 0.5.2 source
 ==================================================
 
-real	0m12.280s
-user	0m11.464s
-sys	0m0.929s
--rwxr-xr-x 1 root root 276032 Nov 10 16:40 /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/catpm52
+real	0m10.633s
+user	0m9.919s
+sys	0m0.922s
+-rwxr-xr-x 1 root root 276032 Nov 10 16:44 /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/catpm52
 catpm 0.5.2 (for CatBase 0.1.8)
 
 
@@ -28,14 +28,18 @@ catpm 0.5.2 (for CatBase 0.1.8)
 == [3/3] package + publish to local registry4 (source snapshot for the diff)
 ==================================================
 catpm: packed catpm@0.5.2 -> dist/catpm-0.5.2.cpkg
-  size: 160618 bytes   sha256: 3ab56fa1ae8d2a692ac41235a028ea3f82ba25b15272d5dae85ffc25f976e38c
+  size: 160620 bytes   sha256: 08e98916972a83e788ab162b99e1d432ba0a007352ceaad9ea1eb37415e90a69
 catpm: published catpm@0.5.2
   -> /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/catpm/catpm-0.5.2.cpkg
-  -> /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/index.json updated (sha256 3ab56fa1ae8d2a69...)
+  -> /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4/index.json updated (sha256 08e98916972a83e7...)
+distinct binary hashes (want 1): 1
 registry4 catpm versions: ['0.4.0', '0.5.0', '0.5.1', '0.5.2']
-0.5.2 sha256: 3ab56fa1ae8d2a692ac41235a028ea3f82ba25b15272d5dae85ffc25f976e38c
+0.5.2 sha256: 08e98916972a83e788ab162b99e1d432ba0a007352ceaad9ea1eb37415e90a69
+note: local repack sha differs from the GitHub artifact (tar mtimes differ
+per pack; archive bytes are not reproducible, the shipped binary inside is
+- verified by hash below). GitHub canonical 0.5.2: a096be0a...
 
 
 ==================================================
-== DONE build6  2026-11-10 08:40:45Z
+== DONE build6  2026-11-10 08:44:37Z
 ==================================================

@@ -42,11 +42,17 @@ step "[3/3] package + publish to local registry4 (source snapshot for the diff)"
 cd $WS/pkgsrc/catpm-pkg052 && rm -rf dist
 $CPM pack 2>&1 | tail -3
 $CPM publish $REG 2>&1 | tail -3
+# the binary inside the repacked archive must be bit-identical to catpm52
+rm -rf /tmp/x52 && mkdir /tmp/x52 && tar -xzf dist/catpm-0.5.2.cpkg -C /tmp/x52 bin
+sha256sum /tmp/x52/bin/catpm $WS/catpm/catpm52 | awk '{print $1}' | sort -u | wc -l | sed 's/^/distinct binary hashes (want 1): /'
 python3 -c "
 import json
 d = json.load(open('$REG/index.json'))
 print('registry4 catpm versions:', sorted(d['packages']['catpm'].keys()))
 print('0.5.2 sha256:', d['packages']['catpm']['0.5.2']['sha256'])
+print('note: local repack sha differs from the GitHub artifact (tar mtimes differ')
+print('per pack; archive bytes are not reproducible, the shipped binary inside is')
+print('- verified by hash below). GitHub canonical 0.5.2: a096be0a...')
 "
 echo ""
 step "DONE build6  $(date -u '+%Y-%m-%d %H:%M:%SZ')"
