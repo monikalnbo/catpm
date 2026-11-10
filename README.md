@@ -1,6 +1,6 @@
 # catpm — 用 CatBase 写的依赖包管理器（pip/npm 式语义 + apt 式源清单 + 四层协议）
 
-catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、**预编译二进制包（v0.5.3）**，一应俱全——全部用一门新语言实现。
+catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、预编译二进制包（v0.5.3）、**apt update 式索引缓存 + pip 式新版本提示（v0.5.4）**，一应俱全——全部用一门新语言实现。
 
 > 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0）。
 > **v0.4 起仓库分离**：包集中在专用仓库 **[monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**；本仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。
@@ -12,8 +12,8 @@ catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Z
 | | |
 |---|---|
 | 语言 | CatBase v0.1.8（本机验证包；`catcc 0.1.8` + Zig 0.14.1 后端） |
-| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.5.3）+ `util.catc` + `ver.catc`（版本引擎） |
-| 二进制 | `catpm/catpm53`（v0.5.3，283,328 B）；`catpm52`/`catpm5`/`catpm4`/`catpm3`/`catpm2` 为旧版，MIT 许可 |
+| PM 源码 | `catpm/src2/catpm.cat`（入口，v0.5.4）+ `util.catc` + `ver.catc`（版本引擎） |
+| 二进制 | `catpm/catpm54`（v0.5.4，302,864 B）；`catpm53`/`catpm52`/`catpm5`/`catpm4` 为旧版，MIT 许可 |
 | 源定义 | `package.where`（apt sources.list 式多源清单，默认指向 catpm-registry 仓库） |
 | 源码形态 | 源码内置（vendoring）：包以源码安装进 `deps/`，catcc 单入口编译时传递展开 import |
 | 自更新 | `catpm self-update`（对标 `apt install apt`）——catpm 本体也是 registry 里的一个包 |
@@ -40,7 +40,7 @@ catcc main.cat -o app && ./app   引用直接+传递依赖，运行正确
 curl -fsSL https://raw.githubusercontent.com/monikalnbo/catpm/main/install.sh | sh
 ```
 
-`install.sh` 是纯 POSIX sh（同一份脚本在 sh / bash / zsh 下真实跑过，见 `logs/run4.log` [5/6]）：下载 `catpm5` 二进制与 `package.where`（默认源：catpm-registry 仓库）放到 `~/.local/bin`，`package.where` 与二进制同目录——catpm 找源时优先读二进制旁边的清单，开箱即用。装完即可 `catpm self-update` 保持新版（v0.5 起支持）。
+`install.sh` 是纯 POSIX sh（同一份脚本在 sh / bash / zsh 下真实跑过，见 `logs/run4.log` [5/6]）：下载 `catpm54` 二进制与 `package.where`（默认源：catpm-registry 仓库）放到 `~/.local/bin`，`package.where` 与二进制同目录——catpm 找源时优先读二进制旁边的清单，开箱即用。装完即可 `catpm self-update` 保持新版（v0.5 起支持）。
 
 ### fish
 
@@ -61,17 +61,17 @@ export PATH="$HOME/.local/bin:$PATH"
 fish_add_path ~/.local/bin
 ```
 
-然后 `catpm --version` 验证（应输出 `catpm 0.5.3 (for CatBase 0.1.8)`）。
+然后 `catpm --version` 验证（应输出 `catpm 0.5.4 (for CatBase 0.1.8)`；若源上有更新版本，会像 pip 一样追加一行提示）。
 
 ### 从源码构建
 
 需要 CatBase v0.1.8（`bin/catcc`、`conf/`、`runtime/`）：
 
 ```bash
-cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm53  # ~12 s
+cd catbase && ./bin/catcc ../catpm/src2/catpm.cat -o ../catpm/catpm54  # ~13 s
 ```
 
-不想构建时直接用仓库里已编译的 `catpm/catpm53`（x86_64 Linux ELF）。
+不想构建时直接用仓库里已编译的 `catpm/catpm54`（x86_64 Linux ELF）。
 
 > 说明：安装脚本只是「下载 + 放对位置」，catpm 自身运行还依赖系统 `tar`/`sha256sum`/`curl`（包管理操作用）；`catpm --version`、`catpm sources` 等纯命令无这些也能跑。
 
@@ -90,7 +90,9 @@ catpm add 'mathx@>=0.2.0,<0.4.0'  # 逗号 AND 列表（v0.4：每项都须满�
 catpm add 'mathx@*'               # 星号 = 任意版本取最高（v0.4，latest 同义词）
 catpm install                     # lock 完整时 lock-exact 精确还原（同 npm ci）；
                                   #   否则按 catpm.json 重解析全装（同 npm install）
-catpm update                      # 重解析 + 重写 lock + 安装（同 npm update）（v0.4）
+catpm update                      # 刷新索引缓存，不装任何包（同 apt update）（v0.5.4）
+catpm upgrade                     # 重解析 + 重写 lock + 安装（同 apt upgrade / npm update）
+                                  #   （v0.5.4 前该语义叫 update）
 catpm outdated                    # current vs newest，标 -> upgradable（v0.4）
 catpm lock                        # 只解析 + 写锁，不装（同 npm i --package-lock-only）
 catpm list                        # 列出已装（同 pip list / npm ls）
@@ -143,7 +145,8 @@ def main() {
 | 范围版本 | `pip install pkg>=1,<2` | `npm i pkg@^1.2.3` | `catpm add pkg@^1.2.3`（`~` `>=` `<` `>` `<=`、逗号 AND、`*` 同理） |
 | 按清单全装 | `pip install -r requirements.txt` | `npm install` | `catpm install`（lock 完整时 lock-exact） |
 | 按锁精确还原 | （无） | `npm ci` | `catpm install`（lock 完整自动走） |
-| 升级（语义内） | `pip install -U pkg` | `npm update` | `catpm update` |
+| 刷新包索引 | — | — | `catpm update`（同 apt update，不装包） |
+| 升级（语义内） | `pip install -U pkg` | `npm update` | `catpm upgrade` |
 | 查过期 | `pip list -o` | `npm outdated` | `catpm outdated` |
 | 只生成锁 | — | `npm i --package-lock-only` | `catpm lock` |
 | 列出已装 | `pip list` | `npm ls` | `catpm list` |
@@ -163,13 +166,13 @@ def main() {
 | 优先级/pin | `/etc/apt/preferences`（pin-priority） | `prio=N`（行内选项） |
 | 钉定到源 | `Package: foo` + `Pin: origin …` | `pkg=foo,bar`（行内选项） |
 | 列出源 | `cat /etc/apt/sources.list` | `catpm sources`（实测可达性） |
-| 刷新索引 | `apt update` | 每次命令实时拉各源 index.json |
+| 刷新索引 | `apt update` | `catpm update`（刷新索引缓存；读路径 TTL 内走缓存，v0.5.4） |
 
 **说明符子集**（实测支持的）：`1.2.3`、`^1.2.3`（0 主版本锁次版本，同 npm）、`~1.2.3`、`>=` `>` `<` `<=`、**逗号 AND 列表** `>=0.2.0,<0.4.0`（v0.4）、**`*`**（v0.4，= latest）、`latest`。不支持 `1.x`/`||`/`~=`/预发布（原因见 PROTOCOL.md §2.2）——完整表见 PROTOCOL.md §2.2，不虚构。
 
 ## 5. 仓库分离：包都在 catpm-registry（v0.4）
 
-**[github.com/monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**（PUBLIC）是包仓库：`index.json` + `<name>/<name>-<ver>.cpkg` 放仓库根，当前 7 包 11 版本：
+**[github.com/monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**（PUBLIC）是包仓库：`index.json` + `<name>/<name>-<ver>.cpkg` 放仓库根，当前 8 包 15 版本：
 
 | 包 | 版本 | 用途 | 依赖 |
 |---|---|---|---|
@@ -180,7 +183,7 @@ def main() {
 | **timex** | 0.1.0 | **v0.4 新增**：真实时间（`iso8601()`/`epoch()`/`stamp()`/`days_between()`，经 `exec(date)`） | stringx ^0.3.0 |
 | **randx** | 0.1.0 | **v0.4 新增**：种子化确定性 PRNG（`seed`/`between`/`below`/`pick`/`die6`；LCG + 乘法混叠，无位运算可用故纯 `+ * %` 实现） | timex ^0.1.0 |
 | **hellox** | 1.0.0 | **v0.5.3 新增**：首个预编译参考包（含 `bin/hellox` linux-x86_64 ELF） | — |
-| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 / 0.5.3 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
+| **catpm** | 0.4.0 / 0.5.0 / 0.5.1 / 0.5.2 / 0.5.3 / 0.5.4 | **v0.5 新增**：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
 
 本仓库（catpm）只保留 PM 本体：源码、二进制、`package.where`、README/PROTOCOL、安装脚本、日志。**v0.3 及以前放在本仓库的 `registry/`、`registry3/`、`registry-mirror/` 已整体删除（非归档）**——包体与索引全部迁移到 catpm-registry，raw 可达性实测 8/8 个 .cpkg + index.json 全 200（`logs/run4.log` [6/6]）。
 
@@ -255,12 +258,41 @@ catpm self-update @0.4.0     # 装指定版本（可降级；说明符同 add �
 
 **语言栏说明**：GitHub 语言栏只显示 [github/linguist](https://github.com/github/linguist) 已注册语言；CatBase 未注册，注册需上游 PR 且有真实使用量门槛（CONTRIBUTING.md 要求约 2000 文件/扩展，实测全 GitHub 仅 2 个 .catc 文件）——做不到就是做不到。本仓库用 `.gitattributes` 把 `.catc/.cat` 映射到最接近的已注册语言 Python（`linguist-language=Python`），脚本/日志/二进制标 vendored/generated；推送后实测语言栏从 `Shell 100%` 变为 `Python 81,206 B / Shell 5,340 B`。
 
+## 5e. 索引缓存与 apt update 语义（v0.5.4）
+
+对标 `apt update`（只刷新索引、不装任何包）与 pip 的「新版本可用」提示（v0.5.4 起生效）。
+
+**`catpm update` = 刷新索引缓存**（真实输出，`logs/run8.log`）：
+
+```
+$ catpm update
+catpm: refreshing package index from 2 source(s)
+  OK   /root/.../registry4            13 entries (first refresh)
+  OK   https://raw.githubusercontent.com/.../catpm-registry/main   14 entries (first refresh)
+catpm: index cache updated: 2 ok, 0 failed, 27 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+```
+
+- **缓存布局**：`.catpm-cache/index-cache/<sha256(root)[0:16]>.json` 每源一份 + `meta.json`（roots / fetched_at / counts）。TTL 默认 86400 s（一天），`CATPM_INDEX_TTL=<秒>` 覆盖（0 = 立即过期、下次读取重拉；非法值回退默认）。时效按整秒比较，同一秒内的两次读取视为新鲜。
+- **读路径优先用缓存**（v0.5.4 起）：`add` / `install` / `lock` / `outdated` / `upgrade` 解析版本时——TTL 内命中缓存直接用（不再逐源联网）；缺失或过期自动重拉一次（成功顺手写缓存）；live 拉取失败回退旧缓存并打 `STALE` 警告（离线也能装已见过的版本）。`sources`（要实测可达性）与 `self-update`（必须看到刚发布的新版本）保持 live 拉取。
+- **失败路径（对标 apt 对部分源报错但保留其余）**：某源不可达 → 该源 `ERR ... unreachable (keeping last good copy: N entries)`（本地旧缓存原样保留，绝不破坏）；索引非 JSON 对象 → `ERR ... invalid index`；其余源照常刷新；命令整体 `PARTIAL FAILURE` 提示 + **exit 1**。全部源不可达才 exit 1 且不清缓存。
+- **update ≠ upgrade（apt 语义划分）**：`catpm update` 只碰索引缓存，`deps/` 零接触；`catpm upgrade` 承接旧 `update` 的语义（重解析 + 重写 lock + 安装，同 `apt upgrade` / `npm update`）。v0.5.4 前的 `update` 即今 `upgrade`，usage 里写明。
+
+**pip 式新版本提示**：`catpm --version` 与 `catpm update` 会顺带查源内 catpm 最新版，有更新时像 pip 一样追加一行：
+
+```
+$ catpm --version
+catpm 0.5.4 (for CatBase 0.1.8)
+catpm: notice: new version available: current 0.5.4, available 0.5.5 — run 'catpm self-update'
+```
+
+当前版 ≥ 源内最新时静默（不制造噪音）；提示不阻塞任何命令，退出码不变。自升级仍走 `catpm self-update`（下载 → sha256 门 → 冒烟 → 原子 mv，链路见 §5b）——「检测到新版本 → 一条命令自升级 → 新版可用」全链路实测见 `logs/run8.log`。
+
 ## 6. 仓库布局
 
 ```
-catpm/src2/          PM 源码（catpm.cat v0.5.3 + ver.catc + util.catc + test_ver.cat 62 断言）
-catpm/catpm53        编译好的 x86_64 Linux 二进制（v0.5.3，283,328 B；catpm52/catpm5/catpm4/catpm3/catpm2 为旧版）
-diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3；发版规则见 §5c）
+catpm/src2/          PM 源码（catpm.cat v0.5.4 + ver.catc + util.catc + test_ver.cat 62 断言）
+catpm/catpm54        编译好的 x86_64 Linux 二进制（v0.5.4，302,864 B；catpm53/catpm52/catpm5/catpm4 为旧版）
+diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3、v0.5.3..v0.5.4；发版规则见 §5c）
 catpm/package.where  默认源清单（指向 catpm-registry 仓库 GitHub raw）
 install.sh           POSIX sh 安装器（sh/bash/zsh 通用，curl | sh 一键装）
 install.fish         fish 原生安装器（curl | source）
@@ -278,6 +310,8 @@ logs/build6.log      v0.5.2 构建记录（62 断言 + catpm52 编译 + 打包�
 logs/run6.log        v0.5.2 打磨实测：三处修复复现验证 + self-update 全链路（0.5.0→0.5.1→0.5.2→降级）+ raw 验证
 logs/build7.log      v0.5.3 构建记录（62 断言 + catpm53 编译 + hellox 打包发布含 bin 指纹）
 logs/run7.log        v0.5.3 预编译包八段实测：安装链路/篡改拦截/坏格式拒绝/错架构拒绝/新旧互兼容/源码回归/self-update+HTTPS
+logs/build8.log      v0.5.4 构建记录（62 断言 + catpm54 编译 + 打包发布）
+logs/run8.log        v0.5.4 apt update 语义实测：索引缓存刷新/部分失败保留/TTL/STALE 回退/upgrade 回归/pip 提示/自升级全链
 logs/syntax-probe.log CatBase v0.1.8 语法/标准库探针（含失败案例）
 scripts/e2e.sh       一键复现 build.log + run.log
 scripts/e2e_v2.sh    一键复现 v0.2 全生态
@@ -286,6 +320,7 @@ scripts/e2e_v4.sh    一键复现 v0.4 全部六段（含安装器与 raw 可达
 scripts/e2e_v5.sh    一键复现 v0.5 自更新全场景（build5.log + selfupdate5.log）
 scripts/e2e_v6.sh    一键复现 v0.5.2 打磨发版（build6.log + run6.log）
 scripts/e2e_v7.sh    一键复现 v0.5.3 预编译包发版（build7.log + run7.log）
+scripts/e2e_v8.sh    一键复现 v0.5.4 索引缓存/自升级发版（build8.log + run8.log）
 PROTOCOL.md          四层协议规范（§4.0 package.where；§4.4 catpm-registry）
 LICENSE              MIT
 ```
@@ -312,6 +347,8 @@ LICENSE              MIT
 | 同一文件两个别名导入 → 编译失败（catcc 硬约束） | 协议规定别名=包名（PROTOCOL.md §3.3） |
 | `int("junk")` 不报错静默得 0 | 版本串先逐字符验数字再 `int()`（`ver.is_digit`/`vlen`） |
 | 未使用的函数参数是 Zig 硬错误 | 删掉 |
+| **模块级常量不做常量折叠**：`IDX_CACHEDIR: str = CACHEDIR + "/index-cache"` 初始化时 `CACHEDIR` 还是 `""`，结果路径变成 `/index-cache`、meta 写到了文件系统根 `/meta.json`（v0.5.4 实测踩坑） | 拼接依赖其他全局的路径一律改成函数：`def idx_cachedir() -> str { return CACHEDIR + "/index-cache" }` |
+| `exec()` 返回值类型是 unknown，`int(exec(...).strip())` 直接编译错 | 先赋给显式 `str` 变量再转（同 any 经 `is not None` 收窄后 `int()` 仍报错的情况，均需 `str()` 中转） |
 
 **做不到的（如实记录，不虚构）**：f-string/字符串含 `\n` 转义（issue #5，两代版本同）、struct dict 字段下标赋值（issue #6）、`float("3.5")`、str 重复 `*`、内置加密哈希（故用 `sha256sum`）、一次编译多个入口源文件（故 vendoring）。
 
@@ -325,6 +362,7 @@ bash scripts/e2e_v4.sh     # v0.4 六段全测 → logs/build4.log + run4.log
 bash scripts/e2e_v5.sh     # v0.5 自更新全场景 → logs/build5.log + selfupdate5.log
 bash scripts/e2e_v6.sh     # v0.5.2 打磨发版 → logs/build6.log + run6.log
 bash scripts/e2e_v7.sh     # v0.5.3 预编译包发版 → logs/build7.log + run7.log
+bash scripts/e2e_v8.sh     # v0.5.4 索引缓存/自升级 → logs/build8.log + run8.log
 bash probe/run_probes.sh   # 语法探针套件 → logs/syntax-probe.log
 ```
 

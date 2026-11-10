@@ -49,7 +49,7 @@
 import ./util.catc as util
 import ./ver.catc as ver
 
-CATPM_VERSION: str = "0.5.2"
+CATPM_VERSION: str = "0.5.4"
 
 import ./util.catc as util
 import ./ver.catc as ver
@@ -77,7 +77,9 @@ def main(args: list[str]) {
     } else if cmd == "install" {
         cmd_install()
     } else if cmd == "update" {
-        cmd_update()
+        cmd_update_index()
+    } else if cmd == "upgrade" {
+        cmd_upgrade()
     } else if cmd == "outdated" {
         cmd_outdated()
     } else if cmd == "lock" {
@@ -108,6 +110,7 @@ def main(args: list[str]) {
         }
     } else if cmd == "--version" {
         print("catpm " + CATPM_VERSION + " (for CatBase 0.1.8)")
+        maybe_print_newer_self()
     } else {
         print("catpm: unknown command '" + cmd + "'")
         usage()
@@ -120,7 +123,8 @@ def usage() {
     print("  init                   create " + MANIFEST + " in the current directory")
     print("  add <pkg[@spec]>       add dependency (spec: 1.2.3 ^1.2 ~1.2 >=1,<2 * latest)")
     print("  install                install exactly what " + LOCKFILE + " pins (or resolve fresh)")
-    print("  update                 re-resolve from " + MANIFEST + " and rewrite " + LOCKFILE)
+    print("  update                 refresh the package index cache from all sources (like 'apt update'; installs nothing)")
+    print("  upgrade                re-resolve " + MANIFEST + ", rewrite " + LOCKFILE + " and install (like 'apt upgrade'; was 'update' before v0.5.4)")
     print("  outdated               show current vs newest version per package")
     print("  lock                   resolve + write " + LOCKFILE + " without installing")
     print("  list                   list installed packages and versions")
@@ -380,6 +384,104 @@ def path_is_dir(p: str) -> bool {
     return out.strip().startswith("directory")
 }
 
+# ---------- prebuilt binaries (v0.5.3) ----------
+# A .cpkg may carry a prebuilt executable at bin/<name>. On install the file
+# lands in deps/<name>/bin/<name>, gets its exec bit restored (tar drops it
+# when the packer's umask masks it), and is smoke-checked with --version or
+# --help. Packages without bin/ install exactly as before (pure source).
+#
+# Why not compile-on-install: CatBase has no stable ABI or linker story; the
+# only consumer model is "single-entry source, imports inlined at compile
+# time". A prebuilt binary can only serve standalone tools (like catpm
+# itself), not importable libraries — those remain source-vendored by design.
+
+def host_platform() -> str {
+    # "linux-x86_64" / "linux-aarch64" / "darwin-arm64" ... via uname
+    sys: str = exec("uname -s").strip().lower()
+    mach: str = exec("uname -m").strip().lower()
+    if sys == "linux" {
+        return "linux-" + mach
+    }
+    return sys + "-" + mach
+}
+
+def is_elf(path: str) -> bool {
+    # CatBase has no \xNN escapes (issue #5) and an int index into a str
+    # read in binary mode returns "" — only slices are safe. Check the
+    # 0x7f magic byte through ord(all[0:1]).
+    f: File = file(path, "rb")
+    all: str = f.read()
+    f.close()
+    if len(all) < 4 {
+        return False
+    }
+    if ord(all[0:1]) != 127 {
+        return False
+    }
+    return all[1:4] == "ELF"
+}
+
+def elf_arch_of(path: str) -> str {
+    # e_machine is a little-endian u16 at offset 18
+    f: File = file(path, "rb")
+    body: str = f.read()
+    f.close()
+    if len(body) < 20 {
+        return "?"
+    }
+    lo: int = ord(body[18:19])
+    hi: int = ord(body[19:20])
+    m: int = lo + hi * 256
+    if m == 62 {
+        return "x86_64"
+    }
+    if m == 183 {
+        return "aarch64"
+    }
+    if m == 40 {
+        return "arm"
+    }
+    if m == 3 {
+        return "x86"
+    }
+    return "other"
+}
+
+# check deps/<name>/bin/<name>: executable, ELF-or-shebang, arch matches host
+def prebuilt_check(binp: str) -> str {
+    # result: "" = ok; otherwise a reason string (printed by caller)
+    out: str = exec("stat -c %A '" + binp + "' 2>/dev/null").strip()
+    if out == "" {
+        return "stat failed"
+    }
+    if out.find("x") < 0 {
+        return "no exec bit (mode " + out + ")"
+    }
+    if is_elf(binp) {
+        arch: str = elf_arch_of(binp)
+        host: str = host_platform()
+        if host.find(arch) < 0 {
+            return "ELF " + arch + " but host is " + host
+        }
+    } else {
+        # not ELF: only a #! script is an acceptable prebuilt. Anything else
+        # (e.g. a text file that merely carries the exec bit) would be run by
+        # the shell's ENOEXEC fallback, "execute" garbage, and still look
+        # alive because exec() always sees rc 0 — reject deterministically.
+        f: File = file(binp, "rb")
+        head: str = f.read()
+        f.close()
+        if len(head) < 2 or head[0:2] != "#!" {
+            return "neither ELF nor #! script (first bytes are not a known executable format)"
+        }
+    }
+    run: str = exec("'" + binp + "' --version 2>&1 || '" + binp + "' --help 2>&1 || true")
+    if run.strip() == "" {
+        return "produced no output with --version/--help (not runnable?)"
+    }
+    return ""
+}
+
 # fetch index.json from every source; unreachable ones warn + skip
 def fetch_all(st: dict[str, any]) {
     idxs: dict[str, any] = {}
@@ -453,6 +555,345 @@ def source_summary(st: dict[str, any]) -> str {
     }
     return out
 }
+
+# ---------- package index cache (v0.5.4, like 'apt update') ----------
+# Layout under CACHEDIR/index-cache/:
+#   <n>.json   one file per source root, content = that source's index.json
+#   meta.json  {"roots": [root strings], "fetched_at": {"<root>": epoch_sec},
+#               "counts": {"<root>": entry_count}}
+# Expiry: entries older than CATPM_INDEX_TTL seconds (default 86400 = 1 day)
+# are stale; a stale/missing/corrupt cache is refetched transparently.
+# A source that fails during a refresh keeps its LAST GOOD cached copy —
+# the cache is only ever overwritten on a successful fetch (never truncated
+# first), so a partial network failure can never leave you worse off.
+
+def idx_cachedir() -> str {
+    return CACHEDIR + "/index-cache"
+}
+IDX_TTL_DEFAULT: int = 86400
+
+def now_epoch() -> int {
+    s: str = exec("date +%s")
+    return int(s.strip())
+}
+
+def ttl_seconds() -> int {
+    e: str = getenv("CATPM_INDEX_TTL")
+    if e == "" {
+        return IDX_TTL_DEFAULT
+    }
+    i: int = 0
+    while i < len(e) {
+        if not ver.is_digit(e[i:i+1]) {
+            return IDX_TTL_DEFAULT
+        }
+        i = i + 1
+    }
+    n: int = int(e)
+    if n < 0 {
+        return IDX_TTL_DEFAULT
+    }
+    return n
+}
+
+def idx_cache_path(root: str) -> str {
+    # stable per-root filename: sha256 of the root string, first 16 hex chars
+    return idx_cachedir() + "/" + sha256_of_string(root)[0:16] + ".json"
+}
+
+def sha256_of_string(s: str) -> str {
+    # echo -n | sha256sum (sha256sum_of works on files only)
+    out: str = exec("printf '%s' '" + s.replace("'", "'\\''") + "' | sha256sum")
+    sp: int = out.find(" ")
+    if sp < 0 {
+        return "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+    return out[0:sp]
+}
+
+# count package entries (name,version) pairs in an index
+def idx_entry_count(idx: dict[str, any]) -> int {
+    n: int = 0
+    pkgs: dict[str, any] = util.get_dict(idx, "packages")
+    names: list[str] = pkgs.keys()
+    i: int = 0
+    while i < len(names) {
+        vs: dict[str, any] = util.get_dict(pkgs, names[i])
+        n = n + len(vs.keys())
+        i = i + 1
+    }
+    return n
+}
+
+def read_idx_cache_meta() -> dict[str, any] {
+    p: str = idx_cachedir() + "/meta.json"
+    if not file_exists(p) or path_is_dir(p) {
+        return {}
+    }
+    f: File = file(p, "r")
+    c: str = f.read().strip()
+    f.close()
+    if not c.startswith("{") {
+        return {}
+    }
+    d: dict[str, any] = json_loads(c)
+    if not d.contains("roots") or not d.contains("fetched_at") {
+        return {}
+    }
+    return d
+}
+
+def write_idx_cache_meta(m: dict[str, any]) {
+    f: File = file(idx_cachedir() + "/meta.json", "w")
+    f.write(json_dumps(m))
+    f.write("\n")
+    f.close()
+}
+
+# load a root's cached index; {} if absent/corrupt (caller refetches)
+def load_idx_cache(root: str) -> dict[str, any] {
+    p: str = idx_cache_path(root)
+    if not file_exists(p) or path_is_dir(p) {
+        return {}
+    }
+    f: File = file(p, "r")
+    c: str = f.read().strip()
+    f.close()
+    if not c.startswith("{") {
+        return {}
+    }
+    return json_loads(c)
+}
+
+# 'catpm update': refresh the index cache from every source (installs nothing).
+# Per source: report entry count and delta vs the previous cached copy.
+# A failed source keeps its last good copy; overall exit 1 if any source
+# failed (partial failure is loud, never silent).
+def cmd_update_index() {
+    st: dict[str, any] = load_sources()
+    rav: any = st.get("roots", None)
+    roots: list[str] = rav
+    pa: any = st.get("prio", None)
+    prio: dict[str, any] = pa
+    # deterministic refresh order: prio desc, then original order
+    order: list[str] = []
+    used: dict[str, any] = {}
+    while len(order) < len(roots) {
+        best: str = ""
+        bestp: int = -2147483647
+        i: int = 0
+        while i < len(roots) {
+            r: str = roots[i]
+            if not used.contains(r) {
+                pv: int = int(prio.get(r, 0))
+                if pv > bestp {
+                    bestp = pv
+                    best = r
+                }
+            }
+            i = i + 1
+        }
+        order.append(best)
+        used.put(best, True)
+    }
+    mkdir(CACHEDIR)
+    mkdir(idx_cachedir())
+    meta: dict[str, any] = read_idx_cache_meta()
+    fetched: dict[str, any] = util.get_dict(meta, "fetched_at")
+    counts: dict[str, any] = util.get_dict(meta, "counts")
+    now: int = now_epoch()
+    print("catpm: refreshing package index from " + str(len(order)) + " source(s)")
+    newest_self: str = ""
+    okn: int = 0
+    failn: int = 0
+    total: int = 0
+    i: int = 0
+    while i < len(order) {
+        r: str = order[i]
+        body: str = ""
+        good: bool = False
+        if kind_of(r) == "url" {
+            body = http_fetch_soft(r + "/index.json")
+            if body != "" and body.strip().startswith("{") {
+                good = True
+            }
+        } else {
+            p: str = r + "/index.json"
+            if file_exists(p) and not path_is_dir(p) {
+                f3: File = file(p, "r")
+                body = f3.read().strip()
+                f3.close()
+                if body.startswith("{") {
+                    good = True
+                }
+            }
+        }
+        if not good {
+            if body != "" {
+                print("  ERR  " + r + " invalid index (not a JSON object)")
+            } else {
+                old: dict[str, any] = load_idx_cache(r)
+                keep: str = ""
+                if len(old.keys()) > 0 {
+                    keep = " (keeping last good copy: " + str(idx_entry_count(old)) + " entries)"
+                }
+                print("  ERR  " + r + " unreachable" + keep)
+            }
+            failn = failn + 1
+            i = i + 1
+            continue
+        }
+        b: str = body.strip()
+        idx: dict[str, any] = json_loads(b)
+        f2: File = file(idx_cache_path(r), "w")
+        f2.write(b)
+        f2.write("\n")
+        f2.close()
+        apply_refresh_result(r, idx, counts, fetched, now)
+        newest_self = newest_self_in(idx, newest_self)
+        okn = okn + 1
+        total = total + idx_entry_count(idx)
+        i = i + 1
+    }
+    meta.put("roots", roots)
+    meta.put("fetched_at", fetched)
+    meta.put("counts", counts)
+    write_idx_cache_meta(meta)
+    print("catpm: index cache updated: " + str(okn) + " ok, " + str(failn) + " failed, " + str(total) + " entries total (age out after " + str(ttl_seconds()) + "s; override with CATPM_INDEX_TTL)")
+    # pip-style: after refreshing, notice if catpm itself has a newer version
+    print_self_notice(newest_self)
+    if failn > 0 {
+        print("catpm: PARTIAL FAILURE: " + str(failn) + " source(s) could not be refreshed; cached data for them (if any) is retained")
+        exit_now(1)
+    }
+}
+
+# print per-source count line and update meta dicts
+def apply_refresh_result(root: str, idx: dict[str, any], counts: dict[str, any], fetched: dict[str, any], now: int) {
+    n: int = idx_entry_count(idx)
+    oldv: any = counts.get(root, None)
+    delta: str = ""
+    if oldv is not None {
+        ovs: str = str(oldv)
+        d: int = n - int(ovs)
+        if d > 0 {
+            delta = " (+" + str(d) + " vs last refresh)"
+        } else if d < 0 {
+            delta = " (" + str(d) + " vs last refresh)"
+        } else {
+            delta = " (no change)"
+        }
+    } else {
+        delta = " (first refresh)"
+    }
+    print("  OK   " + root + "  " + str(n) + " entries" + delta)
+    counts.put(root, n)
+    fetched.put(root, now)
+}
+
+# fetch_all with cache awareness: fresh cache is used as-is; stale/missing
+# entries are fetched live; a live failure falls back to the stale copy
+# (warned) so offline work still resolves from the last good index.
+def fetch_all_cached(st: dict[str, any]) {
+    idxs: dict[str, any] = {}
+    ok: list[str] = []
+    warns: list[str] = []
+    rav: any = st.get("roots", None)
+    roots: list[str] = rav
+    meta: dict[str, any] = read_idx_cache_meta()
+    fetched: dict[str, any] = util.get_dict(meta, "fetched_at")
+    ttl: int = ttl_seconds()
+    now: int = now_epoch()
+    any_stale_used: bool = False
+    i: int = 0
+    while i < len(roots) {
+        r: str = roots[i]
+        body: str = ""
+        live_ok: bool = False
+        # 1) fresh cache hit? (age within TTL and copy parses)
+        cached: dict[str, any] = load_idx_cache(r)
+        have_fresh: bool = False
+        fv: any = fetched.get(r, None)
+        if fv is not None and len(cached.keys()) > 0 {
+            fvs: str = str(fv)
+            age: int = now - int(fvs)
+            if age >= 0 and age <= ttl {
+                have_fresh = True
+            }
+        }
+        if have_fresh {
+            idxs.put(r, cached)
+            ok.append(r)
+            i = i + 1
+            continue
+        }
+        # 2) stale or missing: fetch live
+        if kind_of(r) == "url" {
+            body = http_fetch_soft(r + "/index.json")
+            if body != "" and body.strip().startswith("{") {
+                live_ok = True
+            }
+        } else {
+            p: str = r + "/index.json"
+            if file_exists(p) and not path_is_dir(p) {
+                f: File = file(p, "r")
+                body = f.read().strip()
+                f.close()
+                if body.startswith("{") {
+                    live_ok = True
+                }
+            }
+        }
+        if live_ok {
+            b: str = body.strip()
+            idxl: dict[str, any] = json_loads(b)
+            idxs.put(r, idxl)
+            ok.append(r)
+            # opportunistically refresh the cache for this root
+            mkdir(CACHEDIR)
+            mkdir(idx_cachedir())
+            fw: File = file(idx_cache_path(r), "w")
+            fw.write(b)
+            fw.write("\n")
+            fw.close()
+            counts2: dict[str, any] = util.get_dict(meta, "counts")
+            fetched2: dict[str, any] = util.get_dict(meta, "fetched_at")
+            counts2.put(r, idx_entry_count(idxl))
+            fetched2.put(r, now)
+            meta.put("roots", roots)
+            meta.put("counts", counts2)
+            meta.put("fetched_at", fetched2)
+            write_idx_cache_meta(meta)
+        } else {
+            # 3) live failed: fall back to stale cache if present
+            if len(cached.keys()) > 0 {
+                idxs.put(r, cached)
+                ok.append(r)
+                any_stale_used = True
+                warns.append("source unreachable, using STALE cached index: " + r)
+            } else {
+                warns.append("source unreachable: " + r)
+            }
+        }
+        i = i + 1
+    }
+    j: int = 0
+    while j < len(warns) {
+        print("catpm: warning: " + warns[j])
+        j = j + 1
+    }
+    if len(ok) == 0 {
+        print("catpm: no reachable source (all failed; see warnings above)")
+        exit_now(1)
+    }
+    if any_stale_used {
+        print("catpm: note: resolved partly from STALE cache; run 'catpm update' when back online")
+    }
+    st.put("idxs", idxs)
+    st.put("ok", ok)
+    st.put("warn", warns)
+}
+
 
 def where_path_of(st: dict[str, any]) -> str {
     return str(st.get("where", ""))
@@ -857,6 +1298,20 @@ def install_one(st: dict[str, any], name: str, version: str) {
         exit_now(1)
     }
     print("  installed " + name + "@" + version + " (sha256 ok) -> " + dst + "/index.catc")
+    # v0.5.3: a prebuilt binary at bin/<name> is a first-class artifact
+    binp: str = dst + "/bin/" + name
+    if file_exists(binp) {
+        sh_die("chmod 0755 '" + binp + "'", "restore exec bit on " + binp)
+        bad: str = prebuilt_check(binp)
+        if bad != "" {
+            print("catpm: prebuilt bin/" + name + " check FAILED: " + bad)
+            print("  (installed anyway — run it yourself to confirm)")
+        } else {
+            arch: str = elf_arch_of(binp)
+            plat: str = host_platform()
+            print("  prebuilt bin/" + name + " ok (" + plat + " / " + arch + ", executable) -> " + binp)
+        }
+    }
 }
 
 def copy_file(src: str, dst: str) {
@@ -940,7 +1395,7 @@ def cmd_add(spec_str: str) {
     spec: str = parts[1]
     # validate against the sources BEFORE touching the manifest
     st: dict[str, any] = load_sources()
-    fetch_all(st)
+    fetch_all_cached(st)
     vers: dict[str, any] = merged_versions(st, name)
     cands: list[str] = vers.keys()
     if len(cands) == 0 {
@@ -992,7 +1447,7 @@ def cmd_install() {
 # install exactly the pins in the lock file (no resolver involved)
 def install_from_lock(lock: dict[str, str]) {
     st: dict[str, any] = load_sources()
-    fetch_all(st)
+    fetch_all_cached(st)
     print("catpm: installing exactly from " + LOCKFILE + " (lock-exact; no re-resolution)")
     names: list[str] = lock.keys()
     # deterministic order: sort by name
@@ -1017,12 +1472,12 @@ def install_from_lock(lock: dict[str, str]) {
     print("catpm: lock restore complete (" + str(len(names)) + " package(s))")
 }
 
-def cmd_update() {
+def cmd_upgrade() {
     if not manifest_exists() {
         print("catpm: no " + MANIFEST + " here; run 'catpm init' first")
         exit_now(1)
     }
-    print("catpm: updating (re-resolving " + MANIFEST + " from sources)")
+    print("catpm: upgrading (re-resolving " + MANIFEST + " from sources)")
     do_install()
 }
 
@@ -1037,7 +1492,7 @@ def cmd_outdated() {
         exit_now(1)
     }
     st: dict[str, any] = load_sources()
-    fetch_all(st)
+    fetch_all_cached(st)
     print("  package   current   newest")
     names: list[str] = lock.keys()
     i: int = 1
@@ -1085,7 +1540,7 @@ def cmd_lock() {
         exit_now(1)
     }
     st: dict[str, any] = load_sources()
-    fetch_all(st)
+    fetch_all_cached(st)
     print("catpm: resolving (source: " + source_summary(st) + ")")
     resolved: dict[str, str] = {}
     order: list[str] = []
@@ -1129,7 +1584,7 @@ def do_install() {
         return
     }
     st: dict[str, any] = load_sources()
-    fetch_all(st)
+    fetch_all_cached(st)
     print("catpm: resolving dependencies (source: " + source_summary(st) + ")")
     resolved: dict[str, str] = {}
     order: list[str] = []
@@ -1192,6 +1647,66 @@ def cmd_sources() {
         print("  " + p + kd + util.pad(r, 43) + util.pad(pin, 12) + status)
         i = i + 1
     }
+}
+
+# scan one source index for the newest catpm version; updates 'best' in place
+# is impossible (no refs), so returns the newer of best-so-far and scan result
+def newest_self_in(idx: dict[str, any], best: str) -> str {
+    vs: dict[str, any] = index_versions(idx, "catpm")
+    vk: list[str] = vs.keys()
+    out: str = best
+    j: int = 0
+    while j < len(vk) {
+        cand: str = vk[j]
+        if ver.valid_version(cand) {
+            if out == "" {
+                out = cand
+            } else if ver.vcmp(cand, out) > 0 {
+                out = cand
+            }
+        }
+        j = j + 1
+    }
+    return out
+}
+
+def print_self_notice(newest: str) {
+    if newest != "" and ver.vcmp(newest, CATPM_VERSION) > 0 {
+        print("catpm: notice: new version available: current " + CATPM_VERSION + ", available " + newest + " — run 'catpm self-update'")
+    }
+}
+
+# pip-style new-version notice: fetch the source index LIVE (never the
+# cache — a just-published release must show up immediately), find the
+# newest catpm, and if it is newer than the running binary print the
+# notice. Best-effort: any failure (offline, no catpm package published)
+# stays silent so this never breaks the host command.
+def maybe_print_newer_self() {
+    st: dict[str, any] = load_sources()
+    rav: any = st.get("roots", None)
+    roots: list[str] = rav
+    i: int = 0
+    newest: str = ""
+    while i < len(roots) {
+        r: str = roots[i]
+        body: str = ""
+        if kind_of(r) == "url" {
+            body = http_fetch_soft(r + "/index.json")
+        } else {
+            p: str = r + "/index.json"
+            if file_exists(p) and not path_is_dir(p) {
+                f: File = file(p, "r")
+                body = f.read()
+                f.close()
+            }
+        }
+        if body != "" and body.strip().startswith("{") {
+            idx: dict[str, any] = json_loads(body.strip())
+            newest = newest_self_in(idx, newest)
+        }
+        i = i + 1
+    }
+    print_self_notice(newest)
 }
 
 # ============================================================
@@ -1529,6 +2044,27 @@ def cmd_publish(regdir: str) {
     # embed deps for layer-2 resolution without downloading the package
     deps: dict[str, any] = util.get_dict(m, "deps")
     entry.put("deps", deps)
+    # v0.5.3: if the archive carries bin/<name>, record its platform fingerprint
+    # in the index so installers can prefer a platform-matching prebuilt.
+    # Field is OPTIONAL: old indexes have no "bin" key (new catpm falls back to
+    # pure source), old catpm ignores unknown keys (never breaks).
+    if file_exists("bin/" + name) {
+        binfo: dict[str, any] = {}
+        binfo.put("path", "bin/" + name)
+        if is_elf("bin/" + name) {
+            arch: str = elf_arch_of("bin/" + name)
+            if arch == "?" {
+                arch = "other"
+            }
+            binfo.put("arch", arch)
+            binfo.put("os", "linux")
+        } else {
+            binfo.put("arch", "any")
+            binfo.put("os", "any")
+        }
+        binfo.put("sha256", sha256_of("bin/" + name))
+        entry.put("bin", binfo)
+    }
     vers.put(version, entry)
     pkgs.put(name, vers)
     idx.put("packages", pkgs)

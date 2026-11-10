@@ -1,0 +1,29 @@
+
+==================================================
+== BUILD LOG v8 — catpm 0.5.4 (index cache + apt update semantics)  2026-11-10 13:49:03Z
+==================================================
+catcc: CatBase Compiler (catcc) 0.1.8   zig: 0.14.1
+
+
+==================================================
+== [1/2] version engine unit tests (62 assertions; unchanged from 0.5.3)
+==================================================
+Compilation successful.
+ALL VER TESTS PASSED
+exit=0
+
+
+==================================================
+== [2/2] fresh compile of the 0.5.4 source
+==================================================
+
+real	0m12.367s
+user	0m11.434s
+sys	0m1.118s
+-rwxr-xr-x 1 root root 302864 Nov 10 21:49 /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catpm/catpm54
+catpm 0.5.4 (for CatBase 0.1.8)
+
+
+==================================================
+== DONE build8  2026-11-10 13:49:19Z
+==================================================

@@ -14,7 +14,7 @@ catpm 的包生态由四层协议构成。每层只依赖下一层，可以单�
 └────────────────────────────────────────────┘
 ```
 
-所有 JSON 字段名、文件名、哈希算法均为本规范的固定部分。实现参考：`catpm/src2/`（CatBase 写的参考实现，当前编译产物 `catpm/catpm52`，即 v0.5.2）。
+所有 JSON 字段名、文件名、哈希算法均为本规范的固定部分。实现参考：`catpm/src2/`（CatBase 写的参考实现，当前编译产物 `catpm/catpm54`，即 v0.5.4）。
 
 ---
 
@@ -110,7 +110,7 @@ stringx 0.3.0
 - `remove` 后以新 lock 为「应存在集合」prune `deps/`。
 - `catpm lock` 命令：只解析写 lock，不安装（对标 `npm install --package-lock-only` / `pip freeze` 前置步骤）。
 - **`install` 是 lock-exact 的**（v0.4 起，对标 `npm ci`）：lock 存在且覆盖 catpm.json 全部直接依赖时，严格按 lock 逐包安装（含 sha256 校验与 prune），**不重新解析**——lock 手改过也照 lock 装（漂移被尊重）；lock 缺失或不完整时回退到全量重解析并重写 lock（对标 `npm install`）。
-- `catpm update`（v0.4 新增）：忽略 lock 重新解析，按 manifest 说明符重写 lock 并安装（对标 `npm update`）。
+- `catpm upgrade`（v0.5.4 起的拼法；v0.4–v0.5.3 叫 `update`）：忽略 lock 重新解析，按 manifest 说明符重写 lock 并安装（对标 `npm update` / `apt upgrade`）。v0.5.4 把该命令更名为 `upgrade`，`update` 让位给索引刷新语义（§4.7）。
 - `catpm outdated`（v0.4 新增）：对每个已装包查源索引最新版，`current != newest` 标 `-> upgradable`（对标 `npm outdated` / `pip list -o`）。
 
 ---
@@ -303,6 +303,37 @@ catpm 自身的版本演进遵守固定规则：
 
 发布顺序（每次相同）：源码定稿 → 全量单测（v0.5.2 起为 62 断言） → 全新编译 → 生成并核对 diff → `catpm pack` → `catpm publish` → git push 两仓库 → raw 直链 200 验证 → self-update 链路实测。
 
+### 4.7 索引缓存与 update/upgrade 语义划分（v0.5.4）
+
+对标 `apt update`（只刷新索引）与 `apt upgrade`（应用更新），v0.5.4 起两个动词分工固定：
+
+| 命令 | 语义 | 碰 deps/ 吗 |
+|---|---|---|
+| `catpm update` | 刷新索引缓存（§下），**不安装任何包** | 否 |
+| `catpm upgrade` | 重解析 manifest + 重写 lock + 安装（v0.4–v0.5.3 的 `update` 即此语义） | 是 |
+
+**索引缓存布局**（项目内，随 `.catpm-cache/` 一起属于第 4 层的本地状态）：
+
+```
+.catpm-cache/
+  index-cache/
+    <sha256(root)[0:16]>.json   每源一份：该源 index.json 的原样字节副本
+    meta.json                   {"roots": {...}, "fetched_at": {root: epoch秒}, "counts": {root: 条目数}}
+```
+
+**刷新（`catpm update`）**：遍历 package.where 全部源（prio 降序），逐源拉取 index.json（远程走 HTTP、本地直读），成功即覆盖写该源的缓存文件并更新 meta；每源打印条目数与较上次增减（`first refresh` / `+N vs last refresh` / `N vs last refresh` / `no change`）。失败语义：某源不可达 → 该源 `ERR ... unreachable`，**本地旧缓存原样保留（last good copy，绝不删除）**；索引非 JSON 对象 → `ERR ... invalid index`（同样保留旧缓存）；其余源照常刷新；只要有失败 → 命令尾行 `PARTIAL FAILURE` + exit 1。
+
+**读路径（`add` / `install` / `lock` / `outdated` / `upgrade`）**：
+
+1. TTL（默认 86400 s，`CATPM_INDEX_TTL=<秒>` 覆盖；非数字/负数回退默认）内有该源的新鲜缓存 → 直接用缓存，不联网；
+2. 缓存缺失或已过期 → live 拉取一次，成功顺手写缓存；
+3. live 失败但存在旧缓存 → 用旧缓存并打 `STALE` 警告（离线可继续安装已见过的版本）；
+4. live 失败且无缓存 → 警告 unreachable；全部源都拿不到 → exit 1。
+
+`catpm sources`（要实测可达性）与 `catpm self-update`（必须看到刚发布的新版本）**恒为 live 拉取**，不读缓存。
+
+**pip 式新版本提示**：`catpm --version` 与 `catpm update` 尾部用 live 索引查 catpm 包最新版，`newest > current` 时打印一行 `notice: new version available: current X, available Y — run 'catpm self-update'`（不改变退出码，不阻塞）；否则静默。
+
 ---
 
 ## 命令对照（pip / npm / catpm）
@@ -315,7 +346,8 @@ catpm 自身的版本演进遵守固定规则：
 | 范围版本 | `pip install pkg>=1,<2` | `npm i pkg@^1.2.3` | `catpm add pkg@^1.2.3`（也支持 `~` `>=` `<` `>` `<=`、逗号 AND 列表、`*`） |
 | 按清单全装 | `pip install -r requirements.txt` | `npm install` | `catpm install`（lock 存在时为 lock-exact，对标 `npm ci`） |
 | 按锁精确还原 | （无） | `npm ci` | `catpm install`（lock 完整时自动走 lock-exact 路径） |
-| 升级到语义允许的最新 | `pip install -U pkg` | `npm update` | `catpm update`（重解析重写 lock） |
+| 刷新包索引 | `apt update` | — | `catpm update`（只刷索引缓存，不装包，§4.7） |
+| 升级到语义允许的最新 | `pip install -U pkg` | `npm update` | `catpm upgrade`（重解析重写 lock） |
 | 查过期 | `pip list -o` | `npm outdated` | `catpm outdated` |
 | 只生成锁 | — | `npm i --package-lock-only` | `catpm lock` |
 | 列出已装 | `pip list` | `npm ls` | `catpm list` |
@@ -325,7 +357,7 @@ catpm 自身的版本演进遵守固定规则：
 | 固定源 | `-i https://pypi.org/simple` | `--registry` | `package.where`（`CATPM_REGISTRY` 为单源兼容） |
 | 源清单/多源 | pip.conf `index-url`（单源） | `.npmrc`（单源） | **`package.where`** 多源清单（apt sources.list 式，§4.0） |
 | 查看源 | — | `npm config get registry` | `catpm sources`（含可达性检查） |
-| 更新 PM 自身 | `pip install -U pip` | （npm 自更新用 nvm/n） | **`catpm self-update [@spec]`**（本体也是源里的包，§4.5） |
+| 更新 PM 自身 | `pip install -U pip` | （npm 自更新用 nvm/n） | **`catpm self-update [@spec]`**（本体也是源里的包，§4.5；`--version`/`update` 有 pip 式新版本提示，§4.7） |
 | 锁文件 | （无标准） | `package-lock.json` | `catpm.lock` |
 
 语义差异（如实记录）：catpm 的 `add` 同时写清单并安装（npm 语义）；pip 的 `install` 对应 catpm 的 `install`。catpm 没有全局安装、没有虚拟环境概念——依赖永远装在项目内 `deps/`。

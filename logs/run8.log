@@ -1,0 +1,128 @@
+
+==================================================
+== RUN LOG v8 — index cache (apt update) + new-version notice (pip)  2026-11-10 13:49:19Z
+==================================================
+scratch dir: /tmp/tmp.rwT3iXkiTa
+
+==================================================
+== [1/8] catpm update refreshes the index cache, installs NOTHING
+==================================================
+catpm: refreshing package index from 1 source(s)
+  OK   /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4  13 entries (first refresh)
+catpm: index cache updated: 1 ok, 0 failed, 13 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+update exit=0
+-- cache on disk after update:
+9d3831da555697f5.json
+meta.json
+-- deps/ must NOT exist (update touches only the index cache):
+no deps/ (correct: apt update installs nothing)
+-- second refresh shows entry counts vs last refresh:
+catpm: refreshing package index from 1 source(s)
+  OK   /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4  13 entries (no change)
+catpm: index cache updated: 1 ok, 0 failed, 13 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+
+
+==================================================
+== [2/8] read path uses the cache (offline add, no re-fetch)
+==================================================
+-- kill the source dir, then re-add purely from caches
+   (index cache resolves the version, package cache serves the tarball):
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+mathx present (resolved + fetched entirely from caches)
+
+==================================================
+== [3/8] TTL: cached index expires -> auto live re-fetch
+==================================================
+-- TTL=0: refresh reports 'age out after 0s':
+catpm: index cache updated: 1 ok, 0 failed, 13 entries total (age out after 0s; override with CATPM_INDEX_TTL)
+-- after 1s of age a TTL=0 read must re-fetch live (source present):
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+catpm: wrote catpm.lock
+loganx present (re-fetched after expiry)
+-- invalid TTL falls back to the default 86400:
+catpm: index cache updated: 1 ok, 0 failed, 13 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+
+
+==================================================
+== [4/8] partial failure: dead source keeps last good copy, exit 1
+==================================================
+-- first refresh warms both (the dead one fails, no cache for it):
+  OK   /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4  13 entries (first refresh)
+  ERR  /nonexistent/registry-should-not-exist unreachable
+catpm: index cache updated: 1 ok, 1 failed, 13 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+-- make the GOOD source dead too (rename), refresh again:
+catpm: refreshing package index from 2 source(s)
+  ERR  /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4 unreachable (keeping last good copy: 13 entries)
+  ERR  /nonexistent/registry-should-not-exist unreachable
+catpm: index cache updated: 0 ok, 2 failed, 0 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+catpm: PARTIAL FAILURE: 2 source(s) could not be refreshed; cached data for them (if any) is retained
+update exit=1 (nonzero: partial failure, as designed)
+-- good source's cache is still on disk and usable:
+cached index files: 2
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+fmtx present (remaining source still serves)
+
+==================================================
+== [5/8] STALE fallback: live dead + old cache -> resolve with warning
+==================================================
+-- source dir vanishes AND cache aged out (TTL=0 + 1s) -> STALE fallback:
+catpm: warning: source unreachable, using STALE cached index: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4
+catpm: note: resolved partly from STALE cache; run 'catpm update' when back online
+catpm: warning: source unreachable, using STALE cached index: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/registry4
+catpm: note: resolved partly from STALE cache; run 'catpm update' when back online
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+stringx present (installed via STALE index + package cache)
+
+==================================================
+== [6/8] upgrade (the pre-0.5.4 'update' semantics) + regression
+==================================================
+-- pin manifest to 0.4.0, then upgrade re-resolves and installs:
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+mathx 0.4.0
+-- 'update <pkg>' no longer installs; it refreshes the index cache:
+catpm: index cache updated: 1 ok, 0 failed, 13 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+
+==================================================
+== [7/8] pip-style notice: fake 0.5.5 -> --version and update both notice
+==================================================
+-- --version notices the newer self (live index, never cache):
+catpm 0.5.4 (for CatBase 0.1.8)
+catpm: notice: new version available: current 0.5.4, available 0.5.5 — run 'catpm self-update'
+-- update prints the notice too:
+catpm: index cache updated: 1 ok, 0 failed, 14 entries total (age out after 0s; override with CATPM_INDEX_TTL)
+catpm: notice: new version available: current 0.5.4, available 0.5.5 — run 'catpm self-update'
+-- sources stays live-only and still works:
+  prio kind root                                        serves       status
+  0     dir  /tmp/tmp.rwT3iXkiTa/fake                   (all)       ok
+
+
+==================================================
+== [8/8] live HTTPS: registry raw checks + self-update 0.5.2 -> 0.5.4
+==================================================
+200  index.json
+200  catpm/catpm-0.5.4.cpkg
+step0: catpm 0.5.2 (for CatBase 0.1.8)
+catpm: target version  0.5.4
+  sha256 ok (12e3080f5387725b...)
+  candidate verified: catpm 0.5.4 (for CatBase 0.1.8)
+catpm: updated /tmp/tmp.rwT3iXkiTa/su/bin/catpm -> 0.5.4
+step1: catpm 0.5.4 (for CatBase 0.1.8)
+no .new residue
+-- fresh 0.5.4 over HTTPS: update (cache) then add prebuilt hellox:
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  15 entries (first refresh)
+catpm: index cache updated: 1 ok, 0 failed, 15 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+hello 1.0.0
+hellox says hi
+run exit=0
+
+
+==================================================
+== DONE run8  2026-11-10 13:49:24Z
+==================================================
