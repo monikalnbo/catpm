@@ -1,0 +1,57 @@
+### 源探测工具功能验证（原始输出）
+## 2026-11-11T15:54:56Z  version: bash+curl+python3
+
+== A. 官方 catpm-registry（默认分支经 GitHub API 解析）
+命中：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  仓库：monikalnbo/catpm-registry    分支：main（来源：api）    路径：(root)
+  协议校验：OK 9 packages 9 versions   （index.json 为合法 JSON 对象，packages/版本/path/sha256 字段齐全）
+  catpm        0.5.5
+  fmtx         0.1.0
+  hashx        0.1.0
+  hellox       1.0.0
+  loganx       0.1.0
+  mathx        0.5.0
+  randx        0.2.0
+  stringx      0.3.0
+  timex        0.1.0
+  合计：9 个包，9 个版本条目
+exit=0
+
+== B. 负例：monikalnbo/ekko-studio（普通仓库，无 index.json）
+catpm-probe: 不是 catpm 源（探测 14 个 URL 均无合法 index.json：分支 main master × 路径 . packages registry catpm-registry packages/registry registry/packages dist）
+exit=1
+
+== C. 负例：不存在的仓库
+catpm-probe: 未命中：GitHub API 返回 404，仓库 monikalnbo/no-such-repo-xyz 不存在或是私有仓库（raw 匿名访问不可用），无法判定是否为 catpm 源
+exit=3
+
+== D. 指定分支：monikalnbo/catpm @ c78a90f 的 registry/（旧自建源，含包体 sha256 抽检）
+命中：https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry
+  仓库：monikalnbo/catpm    分支：c78a90f（来源：explicit）    路径：registry
+  协议校验：OK 4 packages 5 versions   （index.json 为合法 JSON 对象，packages/版本/path/sha256 字段齐全）
+  fmtx         0.1.0
+  loganx       0.1.0
+  mathx        0.2.0, 0.3.0
+  stringx      0.3.0
+  合计：4 个包，5 个版本条目
+抽检包体（HEAD + sha256）...
+  ok  fmtx         0.1.0    411 bytes  sha256=7de7f25284b74c53…
+  ok  loganx       0.1.0    357 bytes  sha256=b58ed7da62157d01…
+  ok  mathx        0.2.0    575 bytes  sha256=0ffece55f6b5684a…
+  ok  mathx        0.3.0    621 bytes  sha256=a9fb75be15f3c47c…
+  ok  stringx      0.3.0    537 bytes  sha256=d6edaeccd60cc2a0…
+VERIFY 5 ok, 0 bad
+exit=0
+
+== E. 网络不可达（HTTPS_PROXY 指向关闭端口）
+catpm-probe: 网络不可达/请求失败，无法判定（全部 14 个候选均请求失败）
+catpm-probe: 最后错误: master@dist: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms: Could not connect to server
+exit=3
+
+== F. 参数校验
+catpm-probe: 缺少仓库参数（user/repo）
+run: catpm-probe --help
+exit=2
+catpm-probe: --prio 必须是非负整数
+run: catpm-probe --help
+exit=2

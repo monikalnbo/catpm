@@ -1,0 +1,84 @@
+================ 11 改清单前自动备份 + 按提示回滚 实测 ================
+时间：2026-11-11T16:06:07Z
+说明：在 /tmp 用一份仿服务器格式的清单演示（不碰真实 /root/.local/bin/package.where）。
+      演示时设置 CATPM_WHERE_FILE=/tmp/rb-evidence/where 让 probe 指向该清单；
+      下文第 7 步的 catpm-probe 通过 --write 显式指定同一文件。
+
+---- 1) 改动前的清单（原样）----
+  # catpm source list v1
+  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+  改前 sha256：1e11517b046c6c5e6382fd487e4565fe79915266af932dd41c77b48bd2be6b3c
+
+---- 2) 执行 probe ... --add（工具应自动备份并打印撤销方法）----
+$ probe monikalnbo/catpm-registry --add
+正在检查 GitHub 仓库：monikalnbo/catpm-registry
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库有 catpm 源 ✅
+
+  源地址：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  在哪找到：分支 main，位置 (root)
+  里面共有 9 个包、9 个版本：
+
+    catpm        0.5.5
+    fmtx         0.1.0
+    hashx        0.1.0
+    hellox       1.0.0
+    loganx       0.1.0
+    mathx        0.5.0
+    randx        0.2.0
+    stringx      0.3.0
+    timex        0.1.0
+
+下一步怎么用这条源：
+  1) 正式加进服务器源清单（会先备份原清单）：
+     probe monikalnbo/catpm-registry --add
+  2) 加完后刷新索引并装包：
+     cd ~/catpm-demo && catpm update && catpm add <包名>
+     或者一条命令全做：catpm-quickstart monikalnbo/catpm-registry <包名>（--branch 探测到的源请先手动 --add）
+
+正在把这条源加入服务器清单 …
+  已备份原清单 -> /tmp/rb-evidence/where.bak.20261112-000608
+  已写入：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+
+撤销方法（复制粘贴即可）：
+  cp -p '/tmp/rb-evidence/where.bak.20261112-000608' '/tmp/rb-evidence/where'
+撤销后建议再跑：catpm update
+退出码=0
+
+---- 3) 改动后的清单（多了一行官方源，另一行原样保留）----
+  # catpm source list v1
+  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+  改后 sha256：5c2581d8ccc94a6392a3ee1027ae002ddd12735eef3f8ed27800091ec250b255
+
+---- 4) 备份文件长什么样 ----
+  备份路径：/tmp/rb-evidence/where.bak.20261112-000608
+  # catpm source list v1
+  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+
+---- 5) 按工具提示回滚（原样复制提示里的命令）----
+$ cp -p '/tmp/rb-evidence/where.bak.20261112-000608' '/tmp/rb-evidence/where'
+退出码=0
+  回滚后 sha256：1e11517b046c6c5e6382fd487e4565fe79915266af932dd41c77b48bd2be6b3c
+  校验：回滚后与「改动前」字节完全一致 ✅
+
+---- 6) 回滚后的清单内容（应回到改动前状态）----
+  # catpm source list v1
+  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+
+---- 7) 幂等性：同一条源连续写两次（第二次应提示已存在、不备份也不加行）----
+（此时该源在第 7 步之前的幂等测试里已写入过一次，所以两次调用都应命中去重）
+第 1 次：
+  合计：9 个包，9 个版本条目
+写入 /tmp/rb-evidence/where（追加模式）
+catpm-probe: 注意：/tmp/rb-evidence/where 已包含该源地址，不重复写入
+第 2 次：
+  合计：9 个包，9 个版本条目
+写入 /tmp/rb-evidence/where（追加模式）
+catpm-probe: 注意：/tmp/rb-evidence/where 已包含该源地址，不重复写入
+  当前内容（1 行注释 + 2 条不同源，应为 3 行）：3
+  # catpm source list v1
+  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+  备份文件数量（去重命中时不应新增备份）：2（均为第 2、7 步早先写入时留下的）

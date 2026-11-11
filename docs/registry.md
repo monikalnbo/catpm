@@ -2,6 +2,10 @@
 
 源层的协议规范见 [PROTOCOL.md §4](../PROTOCOL.md)；本文是用户与维护者视角的操作手册：怎么配源、怎么发布包、怎么管理 registry 仓库。
 
+> 想先确认「某个仓库到底能不能当源」，用仓库里的探测工具：`tools/srcprobe/probe <用户名>/<仓库名>`。
+> 它会直接告诉你有没有源、源地址、里面有哪些包；加 `--add` 可写进清单（自动备份），
+> 用法见 [tools/srcprobe/GUIDE.md](../tools/srcprobe/GUIDE.md)。
+
 ## 源是什么
 
 一个源 = 一个 `index.json` + 一组 `.cpkg` 文件，放在**一个目录**（本地源）或**一个 URL 前缀**（远程源）下。不需要任何服务器软件：GitHub 仓库 + raw 直链就是一个完整的远程源（catpm-registry 即如此运行）。

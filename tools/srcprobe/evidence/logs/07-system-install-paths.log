@@ -1,0 +1,47 @@
+### 把工具与清单装到系统路径（PATH 直接可用）并复测（原始输出）
+## 2026-11-11T15:57:44Z
+== 1. 安装位置
+-rwxr-xr-x 1 root root 15280 Nov 11 23:57 /root/.local/bin/catpm-probe
+-rw------- 1 root root   289 Nov 11 23:55 /root/.local/bin/package.where
+PATH 覆盖检查:
+2:/root/.local/bin
+
+== 2. 绝对路径直接运行工具
+exit=0
+
+== 3. 服务器主项目目录（系统级使用）
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+catpm: refreshing package index from 2 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry  5 entries (first refresh)
+catpm: index cache updated: 2 ok, 0 failed, 14 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+exit=0
+catpm: added hellox '1.0.0' to catpm.json (resolves to 1.0.0)
+catpm: resolving dependencies (source: 2 source(s): https://raw.githubusercontent.com/monikalnbo/catpm-registry/main, https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry)
+catpm: resolved 1 package(s):
+  - hellox@1.0.0
+catpm: installing into ./deps/
+  prefetch hellox@1.0.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/hellox/hellox-1.0.0.cpkg
+  cached .catpm-cache/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+exit=0
+a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6  .catpm-cache/hellox/hellox-1.0.0.cpkg
+
+== 4. 最终 catpm sources（服务器级清单）
+catpm: sources from /root/.local/bin/package.where
+  prio kind root                                        serves       status
+  10    url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+  5     url  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry(all)       ok
+exit=0
+
+== 5. 恢复性检查：repo/ 只读约束（git status 与任务开始时一致）
+ M README.md
+ M catpm/src/catpm.cat
+ M catpm/src2/catpm.cat
+ M docs/getting-started.md
+
+== 6. 权限修正（探测工具 --replace 用 mktemp+mv，落盘为 0600；改为与 catpm 原清单一致的 0644）
+-rw-r--r-- 1 root root 289 Nov 11 23:55 /root/.local/bin/package.where

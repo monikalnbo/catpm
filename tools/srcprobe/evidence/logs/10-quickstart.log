@@ -1,0 +1,156 @@
+================ 10 一键命令 catpm-quickstart 完整链路实测 ================
+时间：2026-11-11T16:07:28Z
+说明：本次用独立沙箱清单/目录（CATPM_WHERE_FILE、CATPM_DEMO_DIR 指到 /tmp），
+      不碰服务器真实清单，演示一条命令完成：探测 → 写入清单 → 刷新索引 → 真实下载安装。
+命令：$ catpm-quickstart monikalnbo/catpm-registry hellox 1.0.0
+
+
+== 第 1 步 / 4：检查 monikalnbo/catpm-registry 里有没有 catpm 源，有就写进服务器清单
+正在检查 GitHub 仓库：monikalnbo/catpm-registry
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库有 catpm 源 ✅
+
+  源地址：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  在哪找到：分支 main，位置 (root)
+  里面共有 9 个包、9 个版本：
+
+    catpm        0.5.5
+    fmtx         0.1.0
+    hashx        0.1.0
+    hellox       1.0.0
+    loganx       0.1.0
+    mathx        0.5.0
+    randx        0.2.0
+    stringx      0.3.0
+    timex        0.1.0
+
+下一步怎么用这条源：
+  1) 正式加进服务器源清单（会先备份原清单）：
+     probe monikalnbo/catpm-registry --add
+  2) 加完后刷新索引并装包：
+     cd ~/catpm-demo && catpm update && catpm add <包名>
+     或者一条命令全做：catpm-quickstart monikalnbo/catpm-registry <包名>（--branch 探测到的源请先手动 --add）
+
+正在把这条源加入服务器清单 …
+  （原来没有清单文件，将新建）
+  已写入：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+
+撤销方法（复制粘贴即可）：
+  删掉清单里这一行：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+撤销后建议再跑：catpm update
+
+== 第 2 步 / 4：确认服务器清单
+当前清单：/tmp/qs-evidence/where
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+
+== 第 3 步 / 4：刷新索引（catpm update）
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+catpm: index cache updated: 1 ok, 0 failed, 9 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+
+== 第 4 步 / 4：从源真实下载安装 hellox@1.0.0
+catpm: added hellox '1.0.0' to catpm.json (resolves to 1.0.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - hellox@1.0.0
+catpm: installing into ./deps/
+  prefetch hellox@1.0.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/hellox/hellox-1.0.0.cpkg
+  cached .catpm-cache/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+
+== 结果
+已安装（/tmp/qs-evidence/demo/deps）：
+  installed packages in ./deps:
+    hellox  1.0.0
+
+包体缓存与 sha256（与索引里的值比对过，一致才会安装）：
+  a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6  .catpm-cache/hellox/hellox-1.0.0.cpkg
+
+回滚（如果不想要刚才加的源）：
+  清单是这次新建的，直接删除文件再重新装即可： rm -f '/tmp/qs-evidence/where'
+退出码=0
+
+---- 结果复核：安装目录、缓存 sha256、预编译二进制运行 ----
+$ ls /tmp/qs-evidence/demo/deps/hellox
+bin
+catpm.json
+index.catc
+
+$ sha256sum .catpm-cache/hellox/hellox-1.0.0.cpkg
+a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6  .catpm-cache/hellox/hellox-1.0.0.cpkg
+官方索引里 hellox@1.0.0 的 sha256（应与上一行一致）：
+  a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6
+
+$ ./deps/hellox/bin/hellox
+hello 1.0.0
+hellox says hi
+
+---- 重复执行同一条命令（应识别清单里已有源、不重复写入）----
+$ catpm-quickstart monikalnbo/catpm-registry hellox 1.0.0
+
+== 第 1 步 / 4：检查 monikalnbo/catpm-registry 里有没有 catpm 源，有就写进服务器清单
+正在检查 GitHub 仓库：monikalnbo/catpm-registry
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库有 catpm 源 ✅
+
+  源地址：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  在哪找到：分支 main，位置 (root)
+  里面共有 9 个包、9 个版本：
+
+    catpm        0.5.5
+    fmtx         0.1.0
+    hashx        0.1.0
+    hellox       1.0.0
+    loganx       0.1.0
+    mathx        0.5.0
+    randx        0.2.0
+    stringx      0.3.0
+    timex        0.1.0
+
+下一步怎么用这条源：
+  1) 正式加进服务器源清单（会先备份原清单）：
+     probe monikalnbo/catpm-registry --add
+  2) 加完后刷新索引并装包：
+     cd ~/catpm-demo && catpm update && catpm add <包名>
+     或者一条命令全做：catpm-quickstart monikalnbo/catpm-registry <包名>（--branch 探测到的源请先手动 --add）
+
+正在把这条源加入服务器清单 …
+清单里已经有这条源了，无需重复添加：/tmp/qs-evidence/where
+
+== 第 2 步 / 4：确认服务器清单
+当前清单：/tmp/qs-evidence/where
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+
+== 第 3 步 / 4：刷新索引（catpm update）
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (no change)
+catpm: index cache updated: 1 ok, 0 failed, 9 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+
+== 第 4 步 / 4：从源真实下载安装 hellox@1.0.0
+catpm: added hellox '1.0.0' to catpm.json (resolves to 1.0.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - hellox@1.0.0
+catpm: installing into ./deps/
+  cached .catpm-cache/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+
+== 结果
+已安装（/tmp/qs-evidence/demo/deps）：
+  installed packages in ./deps:
+    hellox  1.0.0
+
+包体缓存与 sha256（与索引里的值比对过，一致才会安装）：
+  a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6  .catpm-cache/hellox/hellox-1.0.0.cpkg
+
+回滚（如果不想要刚才加的源）：
+退出码=0
+
+---- 沙箱清单最终内容 ----
+  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5

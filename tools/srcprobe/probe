@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# probe —— 给小白用的 catpm 源探测命令（catpm-probe 的人话外壳）
+#
+# 用法：
+#   probe <owner>/<repo>            只看这个仓库里有没有 catpm 源（不改任何东西）
+#   probe <owner>/<repo> --add      有源就把它加到服务器源清单（自动备份原清单）
+#   probe <owner>/<repo> --add --prio 5
+#   probe <owner>/<repo> --branch <分支或提交号>   指定分支/历史提交
+#   probe <owner>/<repo> --paths registry          指定只在某个子目录里找
+#
+# 说明：真正的探测由同目录的 catpm-probe 完成；本命令把技术输出翻译成中文，
+#       并在改动清单前自动备份、打印撤销方法。
+set -u
+
+PROG=probe
+WHERE="${CATPM_WHERE_FILE:-/root/.local/bin/package.where}"
+ADD=0
+PRIO=5
+VERBOSE=0
+ARGS=()
+
+usage() {
+  sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+die() { echo "$PROG：$*" >&2; exit 2; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --add)     ADD=1; shift ;;
+    --prio)    [ $# -ge 2 ] || die "--prio 后面要跟一个数字（比如 5）"; PRIO="$2"; shift 2 ;;
+    --branch)  [ $# -ge 2 ] || die "--branch 后面要跟分支名或提交号"; ARGS+=(--branch "$2"); shift 2 ;;
+    --paths)   [ $# -ge 2 ] || die "--paths 后面要跟子目录，比如 registry"; ARGS+=(--paths "$2"); shift 2 ;;
+    --verify)  ARGS+=(--verify-cpkg); shift ;;
+    -v|--verbose) VERBOSE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*)        die "不认识的选项 $1（用 probe --help 看用法）" ;;
+    *)         ARGS+=("$1"); shift ;;
+  esac
+done
+[ ${#ARGS[@]} -gt 0 ] || { usage; exit 2; }
+REPO_ARG="${ARGS[0]}"
+case "$REPO_ARG" in
+  */*) ;;
+  *) die "仓库要写成 用户名/仓库名，例如 monikalnbo/catpm-registry（你写的是：$REPO_ARG）" ;;
+esac
+case "$PRIO" in ''|*[!0-9]*) die "--prio 必须是非负整数" ;; esac
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ENGINE="$HERE/catpm-probe"
+[ -x "$ENGINE" ] || ENGINE="$(command -v catpm-probe || true)"
+[ -n "$ENGINE" ] && [ -x "$ENGINE" ] || die "找不到探测引擎 catpm-probe（应与 probe 放在一起，或已在 PATH 中）"
+
+echo "正在检查 GitHub 仓库：$REPO_ARG"
+echo "（会依次试 main / master 分支下常见位置，通常几秒到十几秒）"
+echo
+
+OUT="$(mktemp)"; ERR="$(mktemp)"
+trap 'rm -f "$OUT" "$ERR"' EXIT
+"$ENGINE" --json "${ARGS[@]}" >"$OUT" 2>"$ERR"
+RC=$?
+
+show_tech() {
+  [ "$VERBOSE" = 1 ] || return 0
+  echo
+  echo "---- 技术细节 ----"
+  cat "$OUT" 2>/dev/null
+  cat "$ERR" 2>/dev/null
+}
+
+case $RC in
+  0)
+    python3 - "$OUT" "${ARGS[*]:1}" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+extra=sys.argv[2].strip() if len(sys.argv)>2 else ""
+d["extra"]=extra
+print("结论：这个仓库有 catpm 源 ✅")
+print()
+print("  源地址：" + d["url"])
+print("  在哪找到：分支 %s，位置 %s" % (d["branch"], d["path"]))
+pk=d["packages"]
+total=sum(len(v) for v in pk.values())
+print("  里面共有 %d 个包、%d 个版本：" % (len(pk), total))
+print()
+for name in sorted(pk):
+    vers=", ".join(pk[name].keys())
+    print("    %-12s %s" % (name, vers))
+print()
+print("下一步怎么用这条源：")
+print("  1) 正式加进服务器源清单（会先备份原清单）：")
+print("     probe %s%s --add" % (d["repo"], (" "+d["extra"]) if d["extra"] else ""))
+print("  2) 加完后刷新索引并装包：")
+print("     cd ~/catpm-demo && catpm update && catpm add <包名>")
+print("     或者一条命令全做：catpm-quickstart %s <包名>（--branch 探测到的源请先手动 --add）" % d["repo"])
+PY
+    show_tech
+    if [ "$ADD" = 1 ]; then
+      echo
+      echo "正在把这条源加入服务器清单 …"
+      SRC_URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["url"])' "$OUT")"
+      if [ -f "$WHERE" ] && awk '{print $1}' "$WHERE" 2>/dev/null | grep -qxF -- "$SRC_URL"; then
+        echo "清单里已经有这条源了，无需重复添加：$WHERE"
+        exit 0
+      fi
+      mkdir -p "$(dirname "$WHERE")"
+      BAK="$WHERE.bak.$(date +%Y%m%d-%H%M%S)"
+      if [ -f "$WHERE" ]; then
+        cp -p "$WHERE" "$BAK"
+        echo "  已备份原清单 -> $BAK"
+      else
+        echo "  （原来没有清单文件，将新建）"
+      fi
+      LINE="$SRC_URL prio=$PRIO"
+      if [ -s "$WHERE" ] && [ -n "$(tail -c1 "$WHERE")" ]; then printf '\n' >> "$WHERE"; fi
+      printf '%s\n' "$LINE" >> "$WHERE"
+      echo "  已写入：$LINE"
+      echo
+      echo "撤销方法（复制粘贴即可）："
+      if [ -f "$BAK" ]; then echo "  cp -p '$BAK' '$WHERE'"; else echo "  删掉清单里这一行：$SRC_URL"; fi
+      echo "撤销后建议再跑：catpm update"
+    fi
+    ;;
+  1)
+    python3 - "$OUT" <<'PY'
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+print("结论：这个仓库里没有 catpm 源 ❌")
+print()
+print("说人话：它只是一个普通的 GitHub 代码仓库，不是「包仓库」，所以不能拿来当源。")
+print("（工具已经检查了 main/master 分支下的根目录、packages/、registry/ 等常见位置，")
+print("  没有任何一个位置存在合法的 index.json —— catpm 源必须有这个文件。）")
+print()
+print("常见原因 / 怎么办：")
+print("  · 仓库名写错了？去浏览器打开 https://github.com/<用户名>/<仓库名> 核对一下。")
+print("  · 源其实在别的分支或子目录？用 --branch 指定分支、--paths 指定子目录后再试。")
+print()
+print("（这只说明「这个仓库不适合当源」，不是出错，服务器上的东西一点没动。）")
+PY
+    show_tech
+    exit 1
+    ;;
+  2)
+    echo "命令参数不对。用 probe --help 看正确写法。" >&2
+    [ "$VERBOSE" = 1 ] && cat "$ERR" >&2
+    exit 2
+    ;;
+  3)
+    python3 - "$OUT" <<'PY'
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+v=d.get("verdict","")
+print("结论：现在没法判断这个仓库有没有源 ⚠️")
+print()
+if v=="repo-not-accessible":
+    print("原因：GitHub 上查不到这个仓库（不存在，或者是私有仓库）。")
+    print("私有仓库的 raw 文件匿名访问不到，catpm 目前也没有配置账号的方式。")
+    print("怎么办：确认仓库名没写错；如果是私有仓库，需要先公开，或换一个公开仓库。")
+elif v=="unreachable":
+    print("原因：网络连不上 GitHub（或请求被限流/代理拦截）。")
+    print("怎么办：")
+    print("  · 先确认本机能不能上网：curl -I https://github.com")
+    print("  · 如果开了代理，检查 HTTPS_PROXY；关掉代理再试一次")
+    print("  · 稍等几分钟再试（GitHub 未登录接口每小时限 60 次）")
+else:
+    print("原因：请求失败，未能拿到可判断的结果。")
+print()
+print("注意：这不代表「仓库没有源」，只是这次没检查成功，可以稍后重试。")
+PY
+    show_tech
+    exit 3
+    ;;
+  *)
+    echo "探测过程出现了意外错误（退出码 $RC）。" >&2
+    cat "$ERR" >&2
+    exit 3
+    ;;
+esac

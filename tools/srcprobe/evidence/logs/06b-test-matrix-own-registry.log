@@ -1,0 +1,58 @@
+### 测试矩阵 ②：此前自建的 registry 仓库（原始输出）
+## 2026-11-11T15:57:24Z
+
+== 1. 从既有 own-registry 日志里找当时用的自建源地址
+https://raw.githubusercontent.com/monikalnbo/catpm/main/no-such-registry
+https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main
+https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/
+https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/demoy
+https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/index.json
+https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx
+https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex
+https://raw.githubusercontent.com/monikalnbo/vault-site/main/README.md
+
+== 2. 地址现状实测
+https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/index.json                HTTP 404
+https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry/index.json                  HTTP 200
+(catpm-registry-demo 已于当时删除，raw 现为 404；当时自建内容已随 v0.4 迁移进 catpm 主仓库历史，见 c78a90f:registry/)
+
+== 3. 仅使用旧自建源（history 路径）的清单，真实下载
+catpm: sources from /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/srcprobe/work/m/own/where
+  prio kind root                                        serves       status
+  5     url  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry(all)       ok
+exit=0
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry  5 entries (first refresh)
+catpm: index cache updated: 1 ok, 0 failed, 5 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+exit=0
+--- catpm add mathx@0.2.0
+catpm: added mathx '0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch mathx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry/mathx/mathx-0.2.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.2.0.cpkg
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- lock
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+mathx 0.2.0
+stringx 0.3.0
+--- 缓存 sha256 vs 该源索引
+0ffece55f6b5684a63be892b030793f3e3899ef46a848daa0acc261e5bb624d6  .catpm-cache/mathx/mathx-0.2.0.cpkg
+d6edaeccd60cc2a09edb87c7cd6d04f47ab4082464bb27d5f0257effc2de0b48  .catpm-cache/stringx/stringx-0.3.0.cpkg
+mathx    0.2.0  MATCH  0ffece55f6b5684a63be892b030793f3e3899ef46a848daa0acc261e5bb624d6
+stringx  0.3.0  MATCH  d6edaeccd60cc2a09edb87c7cd6d04f47ab4082464bb27d5f0257effc2de0b48
+--- deps
+deps/mathx/catpm.json
+deps/mathx/index.catc
+deps/stringx/catpm.json
+deps/stringx/index.catc

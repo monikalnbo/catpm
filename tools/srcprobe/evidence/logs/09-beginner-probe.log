@@ -1,0 +1,84 @@
+================ 09 新手命令 probe 实测（四类场景） ================
+时间：2026-11-11T16:04:56Z  主机：Linux 6.12.107+deb13-amd64 x86_64  命令：/root/.local/bin/probe
+
+---- 场景 A：有源的仓库（官方 catpm-registry）----
+$ probe monikalnbo/catpm-registry
+正在检查 GitHub 仓库：monikalnbo/catpm-registry
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库有 catpm 源 ✅
+
+  源地址：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  在哪找到：分支 main，位置 (root)
+  里面共有 9 个包、9 个版本：
+
+    catpm        0.5.5
+    fmtx         0.1.0
+    hashx        0.1.0
+    hellox       1.0.0
+    loganx       0.1.0
+    mathx        0.5.0
+    randx        0.2.0
+    stringx      0.3.0
+    timex        0.1.0
+
+下一步怎么用这条源：
+  1) 正式加进服务器源清单（会先备份原清单）：
+     probe monikalnbo/catpm-registry --add
+  2) 加完后刷新索引并装包：
+     cd ~/catpm-demo && catpm update && catpm add <包名>
+     或者一条命令全做：catpm-quickstart monikalnbo/catpm-registry <包名>（--branch 探测到的源请先手动 --add）
+退出码=0
+
+---- 场景 B：普通仓库，没有 index.json（负例，应友好否定而不是报错）----
+$ probe monikalnbo/catpm
+正在检查 GitHub 仓库：monikalnbo/catpm
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库里没有 catpm 源 ❌
+
+说人话：它只是一个普通的 GitHub 代码仓库，不是「包仓库」，所以不能拿来当源。
+（工具已经检查了 main/master 分支下的根目录、packages/、registry/ 等常见位置，
+  没有任何一个位置存在合法的 index.json —— catpm 源必须有这个文件。）
+
+常见原因 / 怎么办：
+  · 仓库名写错了？去浏览器打开 https://github.com/<用户名>/<仓库名> 核对一下。
+  · 源其实在别的分支或子目录？用 --branch 指定分支、--paths 指定子目录后再试。
+
+（这只说明「这个仓库不适合当源」，不是出错，服务器上的东西一点没动。）
+退出码=1
+
+---- 场景 C：仓库不存在 / 私有（应说无法判断，不误判为没有源）----
+$ probe monikalnbo/definitely-not-exist-xyz
+正在检查 GitHub 仓库：monikalnbo/definitely-not-exist-xyz
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：现在没法判断这个仓库有没有源 ⚠️
+
+原因：GitHub 上查不到这个仓库（不存在，或者是私有仓库）。
+私有仓库的 raw 文件匿名访问不到，catpm 目前也没有配置账号的方式。
+怎么办：确认仓库名没写错；如果是私有仓库，需要先公开，或换一个公开仓库。
+
+注意：这不代表「仓库没有源」，只是这次没检查成功，可以稍后重试。
+退出码=3
+
+---- 场景 D：网络不通（用死代理模拟，应说无法判断并可重试）----
+$ HTTPS_PROXY=http://127.0.0.1:9 probe monikalnbo/catpm-registry
+正在检查 GitHub 仓库：monikalnbo/catpm-registry
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：现在没法判断这个仓库有没有源 ⚠️
+
+原因：网络连不上 GitHub（或请求被限流/代理拦截）。
+怎么办：
+  · 先确认本机能不能上网：curl -I https://github.com
+  · 如果开了代理，检查 HTTPS_PROXY；关掉代理再试一次
+  · 稍等几分钟再试（GitHub 未登录接口每小时限 60 次）
+
+注意：这不代表「仓库没有源」，只是这次没检查成功，可以稍后重试。
+退出码=3
+
+---- 场景 E：参数写错（应给人话提示）----
+$ probe monikalnbo
+probe：仓库要写成 用户名/仓库名，例如 monikalnbo/catpm-registry（你写的是：monikalnbo）
+退出码=2

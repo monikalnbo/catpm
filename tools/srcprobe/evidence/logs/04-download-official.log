@@ -1,0 +1,56 @@
+### 从清单内官方源真实下载安装（原始输出）
+## 2026-11-11T15:56:15Z  cwd=/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/srcprobe/work/proj
+== 1. catpm add hellox@1.0.0 loganx@0.1.0
+catpm: added hellox '1.0.0' to catpm.json (resolves to 1.0.0)
+catpm: resolving dependencies (source: 2 source(s): https://raw.githubusercontent.com/monikalnbo/catpm-registry/main, https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry)
+catpm: resolved 1 package(s):
+  - hellox@1.0.0
+catpm: installing into ./deps/
+  prefetch hellox@1.0.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/hellox/hellox-1.0.0.cpkg
+  cached .catpm-cache/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+exit=0
+
+== 2. catpm.lock
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+hellox 1.0.0
+
+== 3. 缓存与安装产物
+.catpm-cache/hellox/hellox-1.0.0.cpkg  11486 bytes
+.catpm-cache/index-cache/9beeaa055971df3b.json  755 bytes
+.catpm-cache/index-cache/f245d88bf66af72d.json  1601 bytes
+.catpm-cache/index-cache/meta.json  475 bytes
+deps/hellox/bin/hellox  21344 bytes
+deps/hellox/catpm.json  69 bytes
+deps/hellox/index.catc  328 bytes
+
+== 4. sha256 校验：缓存包体 vs 官方索引（catpm-registry/main）
+--- hellox-1.0.0
+  本地缓存: a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6
+  官方索引:   hellox   1.0.0  index sha256=a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6 path=hellox/hellox-1.0.0.cpkg
+  loganx   0.1.0  index sha256=cf7e081ad27473300f84fc8ec72b2c9b64ad47d70bf62e214f212f9aa91e4ee8 path=loganx/loganx-0.1.0.cpkg
+--- loganx-0.1.0
+  本地缓存:   官方索引:   hellox   1.0.0  index sha256=a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6 path=hellox/hellox-1.0.0.cpkg
+  loganx   0.1.0  index sha256=cf7e081ad27473300f84fc8ec72b2c9b64ad47d70bf62e214f212f9aa91e4ee8 path=loganx/loganx-0.1.0.cpkg
+
+== 5. 安装后 deps 内容与可用性
+deps
+deps/hellox
+deps/hellox/bin
+deps/hellox/catpm.json
+deps/hellox/index.catc
+--- deps/hellox/catpm.json
+{"name":"hellox","version":"1.0.0","deps":{},"files":["bin/hellox"]}
+--- 运行 hellox 预编译二进制（若存在）
+total 24
+-rwxr-xr-x 1 root root 21344 Nov 10 20:28 hellox
+hello 1.0.0
+hellox says hi
+exit=0
+
+== 6. catpm list
+installed packages in ./deps:
+  hellox  1.0.0

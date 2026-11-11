@@ -1,0 +1,52 @@
+### 测试矩阵 ②：此前自建的 registry（旧自建源）真实下载（原始输出）
+## 2026-11-11T15:56:39Z  cwd=/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/srcprobe/work/proj-old
+== 使用服务器级清单（二进制旁 package.where，无项目级覆盖）
+catpm: sources from /root/.local/bin/package.where
+  prio kind root                                        serves       status
+  10    url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+  5     url  https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry(all)       ok
+
+== 选择 mathx@0.2.0：该版本只存在于旧自建源，官方源 mathx 只有 0.5.0
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+catpm: refreshing package index from 2 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry  5 entries (first refresh)
+catpm: index cache updated: 2 ok, 0 failed, 14 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+catpm: added mathx '0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: 2 source(s): https://raw.githubusercontent.com/monikalnbo/catpm-registry/main, https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch mathx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry/mathx/mathx-0.2.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.2.0.cpkg
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+== 缓存包体 sha256 vs 旧自建源索引
+0ffece55f6b5684a63be892b030793f3e3899ef46a848daa0acc261e5bb624d6  .catpm-cache/mathx/mathx-0.2.0.cpkg
+old-index: {'sha256': '0ffece55f6b5684a63be892b030793f3e3899ef46a848daa0acc261e5bb624d6', 'deps': {'stringx': '^0.3.0'}, 'path': 'mathx/mathx-0.2.0.cpkg'}
+--- 官方索引里 mathx 只有：
+['0.5.0']
+
+== 依赖闭包（mathx 0.2.0 依赖 stringx ^0.3.0，两个源都有同版本同 sha，prio=10 官方优先，因此 stringx 来自官方）
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+mathx 0.2.0
+stringx 0.3.0
+5b244f226ef13b08cf89d6e16891db876764f9f8051413629a140b7d750ecd75  .catpm-cache/stringx/stringx-0.3.0.cpkg
+
+== deps 实测
+deps
+deps/mathx
+deps/mathx/catpm.json
+deps/mathx/index.catc
+deps/stringx
+deps/stringx/catpm.json
+deps/stringx/index.catc
+{"name":"mathx","version":"0.2.0","catpm":"0.2.0","deps":{"stringx":"^0.3.0"}}

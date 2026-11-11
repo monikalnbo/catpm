@@ -1,0 +1,66 @@
+### 测试矩阵（原始输出；本日志为修正脚本路径后的完整重跑）
+## 2026-11-11T15:57:05Z
+
+================ ① 官方 catpm-registry（仅官方源的清单） ================
+--- catpm sources
+catpm: sources from /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/srcprobe/work/m/official/where
+  prio kind root                                        serves       status
+  10    url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+--- catpm update
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+catpm: index cache updated: 1 ok, 0 failed, 9 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+exit=0
+--- catpm add randx@0.2.0（依赖闭包 mathx ^0.5.0 -> stringx ^0.3.0）
+catpm: added randx '0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - randx@0.2.0
+  - mathx@0.5.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch randx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/randx/randx-0.2.0.cpkg
+  prefetch mathx@0.5.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/mathx/mathx-0.5.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/randx/randx-0.2.0.cpkg
+  installed randx@0.2.0 (sha256 ok) -> deps/randx/index.catc
+  cached .catpm-cache/mathx/mathx-0.5.0.cpkg
+  installed mathx@0.5.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- lock
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+randx 0.2.0
+mathx 0.5.0
+stringx 0.3.0
+--- 缓存包体 sha256 与官方索引比对
+mathx    0.5.0  MATCH  2ab9e257ef985ee7d4172c3ca2f2e2c7d7c1d7c489aa955146d7b03e47502845
+randx    0.2.0  MATCH  ac14663aefa2129c4511f542c79aefffec4d5a3e7ea29825b91c7a7314d745e3
+stringx  0.3.0  MATCH  5b244f226ef13b08cf89d6e16891db876764f9f8051413629a140b7d750ecd75
+
+================ ③ 负例：普通 GitHub 仓库（无 index.json） ================
+--- repo: monikalnbo/ekko-studio
+[探测工具]
+catpm-probe: 不是 catpm 源（探测 14 个 URL 均无合法 index.json：分支 main master × 路径 . packages registry catpm-registry packages/registry registry/packages dist）
+exit=1
+
+[catpm 行为：把它写进清单会怎样]
+--- catpm sources
+catpm: sources from /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/srcprobe/work/m/negative/where
+catpm: warning: source unreachable: https://raw.githubusercontent.com/monikalnbo/ekko-studio/main
+catpm: no reachable source (all failed; see warnings above)
+exit=1
+--- catpm update
+catpm: refreshing package index from 1 source(s)
+  ERR  https://raw.githubusercontent.com/monikalnbo/ekko-studio/main unreachable
+catpm: index cache updated: 0 ok, 1 failed, 0 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+catpm: PARTIAL FAILURE: 1 source(s) could not be refreshed; cached data for them (if any) is retained
+exit=1
+--- catpm add hellox@1.0.0
+catpm: warning: source unreachable: https://raw.githubusercontent.com/monikalnbo/ekko-studio/main
+catpm: no reachable source (all failed; see warnings above)
+exit=1

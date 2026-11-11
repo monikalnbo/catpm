@@ -35,3 +35,8 @@ catpm/catpm4   linguist-vendored
 catpm/catpm3   linguist-vendored
 catpm/catpm2   linguist-vendored
 demo*/**       linguist-vendored
+
+# --- source-probe tool: bash entry points are delivery artifacts ---
+tools/srcprobe/probe             linguist-vendored
+tools/srcprobe/catpm-probe       linguist-vendored
+tools/srcprobe/catpm-quickstart  linguist-vendored

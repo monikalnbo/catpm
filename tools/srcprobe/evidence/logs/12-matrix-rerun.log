@@ -1,0 +1,152 @@
+================ 12 验证矩阵（用新手命令重跑） ================
+时间：2026-11-11T16:07:44Z
+全部在 /tmp/mx-evidence 沙箱内进行（CATPM_WHERE_FILE / CATPM_DEMO_DIR 指向这里，
+并同步设置 CATPM_WHERE 让 catpm 本身也读沙箱清单），服务器真实清单未被改动。
+
+############ 用例 ①：官方 catpm-registry ############
+1.1 探测：
+$ probe monikalnbo/catpm-registry
+正在检查 GitHub 仓库：monikalnbo/catpm-registry
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库有 catpm 源 ✅
+
+  源地址：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  在哪找到：分支 main，位置 (root)
+  里面共有 9 个包、9 个版本：
+
+    catpm        0.5.5
+    fmtx         0.1.0
+    hashx        0.1.0
+    hellox       1.0.0
+    loganx       0.1.0
+退出码=0
+
+1.2 写入清单 + 刷新 + 真实下载（一条命令链）：
+$ catpm-quickstart monikalnbo/catpm-registry randx 0.2.0
+结论：这个仓库有 catpm 源 ✅
+    mathx        0.5.0
+    randx        0.2.0
+    stringx      0.3.0
+  已写入：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+catpm: index cache updated: 1 ok, 0 failed, 9 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+catpm: resolved 3 package(s):
+  prefetch randx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/randx/randx-0.2.0.cpkg
+  prefetch mathx@0.5.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/mathx/mathx-0.5.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  installed randx@0.2.0 (sha256 ok) -> deps/randx/index.catc
+  installed mathx@0.5.0 (sha256 ok) -> deps/mathx/index.catc
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+  installed packages in ./deps:
+    mathx  0.5.0
+    randx  0.2.0
+    stringx  0.3.0
+  2ab9e257ef985ee7d4172c3ca2f2e2c7d7c1d7c489aa955146d7b03e47502845  .catpm-cache/mathx/mathx-0.5.0.cpkg
+  ac14663aefa2129c4511f542c79aefffec4d5a3e7ea29825b91c7a7314d745e3  .catpm-cache/randx/randx-0.2.0.cpkg
+  5b244f226ef13b08cf89d6e16891db876764f9f8051413629a140b7d750ecd75  .catpm-cache/stringx/stringx-0.3.0.cpkg
+回滚（如果不想要刚才加的源）：
+退出码=0
+
+1.3 依赖闭包缓存 sha256（randx→mathx→stringx）：
+2ab9e257ef985ee7d4172c3ca2f2e2c7d7c1d7c489aa955146d7b03e47502845  .catpm-cache/mathx/mathx-0.5.0.cpkg
+ac14663aefa2129c4511f542c79aefffec4d5a3e7ea29825b91c7a7314d745e3  .catpm-cache/randx/randx-0.2.0.cpkg
+5b244f226ef13b08cf89d6e16891db876764f9f8051413629a140b7d750ecd75  .catpm-cache/stringx/stringx-0.3.0.cpkg
+
+############ 用例 ②：此前自建的 registry（现存形态 monikalnbo/catpm @ c78a90f / registry）############
+2.1 探测（历史提交 + 子目录）：
+$ probe monikalnbo/catpm --branch c78a90f --paths registry
+正在检查 GitHub 仓库：monikalnbo/catpm
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库有 catpm 源 ✅
+
+  源地址：https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry
+  在哪找到：分支 c78a90f，位置 registry
+  里面共有 4 个包、5 个版本：
+
+    fmtx         0.1.0
+    loganx       0.1.0
+    mathx        0.2.0, 0.3.0
+    stringx      0.3.0
+
+下一步怎么用这条源：
+  1) 正式加进服务器源清单（会先备份原清单）：
+     probe monikalnbo/catpm --branch c78a90f --paths registry --add
+  2) 加完后刷新索引并装包：
+     cd ~/catpm-demo && catpm update && catpm add <包名>
+     或者一条命令全做：catpm-quickstart monikalnbo/catpm <包名>（--branch 探测到的源请先手动 --add）
+退出码=0
+
+2.2 先加官方源（提供依赖 stringx），再加这条旧源：
+
+撤销方法（复制粘贴即可）：
+  删掉清单里这一行：https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+撤销后建议再跑：catpm update
+  已备份原清单 -> /tmp/mx-evidence/m2.where.bak.20261112-000747
+  撤销：cp -p '/tmp/mx-evidence/m2.where.bak.20261112-000747' '/tmp/mx-evidence/m2.where'
+  已追加到 /tmp/mx-evidence/m2.where：https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+  沙箱清单内容：
+    https://raw.githubusercontent.com/monikalnbo/catpm-registry/main prio=5
+    https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry prio=5
+
+2.3 刷新 + 只存在于旧源的 mathx@0.2.0 真实下载：
+catpm: refreshing package index from 2 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry  5 entries (first refresh)
+catpm: index cache updated: 2 ok, 0 failed, 14 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+catpm: added mathx '0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: 2 source(s): https://raw.githubusercontent.com/monikalnbo/catpm-registry/main, https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry)
+catpm: resolved 2 package(s):
+  - mathx@0.2.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch mathx@0.2.0 <- https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry/mathx/mathx-0.2.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.2.0.cpkg
+  installed mathx@0.2.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+退出码=0
+
+2.4 缓存 sha256：
+0ffece55f6b5684a63be892b030793f3e3899ef46a848daa0acc261e5bb624d6  .catpm-cache/mathx/mathx-0.2.0.cpkg
+5b244f226ef13b08cf89d6e16891db876764f9f8051413629a140b7d750ecd75  .catpm-cache/stringx/stringx-0.3.0.cpkg
+
+############ 用例 ③：普通仓库（无 index.json）负例 ############
+3.1 探测：
+$ probe monikalnbo/catpm
+正在检查 GitHub 仓库：monikalnbo/catpm
+（会依次试 main / master 分支下常见位置，通常几秒到十几秒）
+
+结论：这个仓库里没有 catpm 源 ❌
+
+说人话：它只是一个普通的 GitHub 代码仓库，不是「包仓库」，所以不能拿来当源。
+（工具已经检查了 main/master 分支下的根目录、packages/、registry/ 等常见位置，
+  没有任何一个位置存在合法的 index.json —— catpm 源必须有这个文件。）
+
+常见原因 / 怎么办：
+  · 仓库名写错了？去浏览器打开 https://github.com/<用户名>/<仓库名> 核对一下。
+  · 源其实在别的分支或子目录？用 --branch 指定分支、--paths 指定子目录后再试。
+
+（这只说明「这个仓库不适合当源」，不是出错，服务器上的东西一点没动。）
+退出码=1
+
+3.2 如果硬把这种仓库当源写进清单，catpm 自己的反应：
+  清单内容：https://raw.githubusercontent.com/monikalnbo/catpm/main prio=5
+$ CATPM_WHERE=/tmp/mx-evidence/m3.where catpm sources
+catpm: sources from /tmp/mx-evidence/m3.where
+catpm: warning: source unreachable: https://raw.githubusercontent.com/monikalnbo/catpm/main
+catpm: no reachable source (all failed; see warnings above)
+退出码=1
+
+$ CATPM_WHERE=/tmp/mx-evidence/m3.where catpm update   （空项目目录，避免读到别处索引缓存）
+catpm: refreshing package index from 1 source(s)
+  ERR  https://raw.githubusercontent.com/monikalnbo/catpm/main unreachable
+catpm: index cache updated: 0 ok, 1 failed, 0 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+catpm: PARTIAL FAILURE: 1 source(s) could not be refreshed; cached data for them (if any) is retained
+退出码=1
+
+说明：负例在探测层被明确判成「不是 catpm 源」（退出码 1）；
+      硬写进清单后，catpm 自己也会报 unreachable / PARTIAL FAILURE（退出码 1）。两层都不放行。

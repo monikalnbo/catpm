@@ -1,0 +1,46 @@
+### 补充：catpm add 一次只加一个包（实测），loganx 单独安装（原始输出）
+## 2026-11-11T15:56:24Z
+catpm: added loganx '0.1.0' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): https://raw.githubusercontent.com/monikalnbo/catpm-registry/main, https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry)
+catpm: resolved 2 package(s):
+  - loganx@0.1.0
+  - hellox@1.0.0
+catpm: installing into ./deps/
+  prefetch loganx@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/loganx/loganx-0.1.0.cpkg
+  cached .catpm-cache/loganx/loganx-0.1.0.cpkg
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+  cached .catpm-cache/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+catpm: wrote catpm.lock
+exit=0
+
+== 缓存包体 sha256 vs 官方索引
+cf7e081ad27473300f84fc8ec72b2c9b64ad47d70bf62e214f212f9aa91e4ee8  .catpm-cache/loganx/loganx-0.1.0.cpkg
+index: {'deps': {}, 'path': 'loganx/loganx-0.1.0.cpkg', 'sha256': 'cf7e081ad27473300f84fc8ec72b2c9b64ad47d70bf62e214f212f9aa91e4ee8'}
+
+== catpm.lock
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+loganx 0.1.0
+hellox 1.0.0
+
+== catpm list
+installed packages in ./deps:
+  hellox  1.0.0
+  loganx  0.1.0
+
+== 删除缓存与 deps 后 install（按锁从源重新下载，验证可重复）
+catpm: installing exactly from catpm.lock (lock-exact; no re-resolution)
+  prefetch loganx@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/loganx/loganx-0.1.0.cpkg
+  prefetch hellox@1.0.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/hellox/hellox-1.0.0.cpkg
+  cached .catpm-cache/hellox/hellox-1.0.0.cpkg
+  installed hellox@1.0.0 (sha256 ok) -> deps/hellox/index.catc
+  prebuilt bin/hellox ok (linux-x86_64 / x86_64, executable) -> deps/hellox/bin/hellox
+  cached .catpm-cache/loganx/loganx-0.1.0.cpkg
+  installed loganx@0.1.0 (sha256 ok) -> deps/loganx/index.catc
+catpm: lock restore complete (2 package(s))
+exit=0
+--- 重新落地的缓存
+a740f5400969fca1b516f0e8526f2f8250d204c40a4e937ff43115a65dbe92e6  .catpm-cache/hellox/hellox-1.0.0.cpkg
+cf7e081ad27473300f84fc8ec72b2c9b64ad47d70bf62e214f212f9aa91e4ee8  .catpm-cache/loganx/loganx-0.1.0.cpkg

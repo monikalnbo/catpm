@@ -1,0 +1,440 @@
+#!/usr/bin/env bash
+# catpm-probe - 探测一个 GitHub 仓库里是否含 catpm 源（package.where 第 4 层协议）
+#
+# 协议依据：catpm PROTOCOL.md §4（源 = URL 前缀 + index.json + <name>/<name>-<ver>.cpkg；
+# 索引格式 {"packages": {name: {ver: {path, sha256, deps}}}）。
+#
+# 用法：
+#   catpm-probe <user/repo> [选项]
+#     --branch <b>       只探测指定分支（可用逗号分隔多个），不再自动探测
+#     --api              强制用 GitHub API 查默认分支（否则先猜 main/master，失败再查）
+#     --paths <p1,p2,..> 覆盖常见路径列表（默认: 根、packages、registry、...）
+#     --write <file>     命中后写入 package.where（追加；已存在同样地址则跳过）
+#     --replace <file>   命中后把文件内容替换为该源（保留文件头注释）
+#     --prio <N>         写入时的 prio=（非负整数，越大越优先）
+#     --pkg <a,b>        写入时的 pkg= 钉定列表
+#     --verify-cpkg      额外抽检每个包每个版本：HEAD 包体、GET 后 sha256 与索引比对
+#     --json             以 JSON 输出探测结果
+#     --no-backup        写 package.where 前不备份原文件
+#     -q, --quiet        只输出结论行
+#   退出码：0 = 命中；1 = 不是 catpm 源；2 = 参数错误；3 = 网络/限流等无法判定
+#
+# 依赖：bash + curl + python3（仅用于 JSON 校验/字段提取），无其他第三方依赖。
+set -u
+
+PROG=catpm-probe
+CURL_OPTS=(-sS --max-time 25 -L -A "catpm-probe/1.0")
+API_UA="catpm-probe/1.0"
+DEFAULT_PATHS=("." "packages" "registry" "catpm-registry" "packages/registry" "registry/packages" "dist")
+DEFAULT_BRANCHES=("main" "master")
+MARKER="# <dir-or-URL> [prio=N] [pkg=name1,name2]"
+
+die_usage() { echo "$PROG: $*" >&2; echo "run: $PROG --help" >&2; exit 2; }
+
+usage() {
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+REPO=""
+BRANCHES=""
+FORCE_API=0
+PATHS_OVERRIDE=""
+WRITE_FILE=""
+REPLACE_FILE=""
+PRIO=""
+PKGLIST=""
+VERIFY_CPKG=0
+JSON_OUT=0
+QUIET=0
+NO_BACKUP=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --branch)     [ $# -ge 2 ] || die_usage "--branch 需要参数"; BRANCHES="$2"; shift 2 ;;
+    --api)        FORCE_API=1; shift ;;
+    --paths)      [ $# -ge 2 ] || die_usage "--paths 需要参数"; PATHS_OVERRIDE="$2"; shift 2 ;;
+    --write)      [ $# -ge 2 ] || die_usage "--write 需要参数"; WRITE_FILE="$2"; shift 2 ;;
+    --replace)    [ $# -ge 2 ] || die_usage "--replace 需要参数"; REPLACE_FILE="$2"; shift 2 ;;
+    --prio)       [ $# -ge 2 ] || die_usage "--prio 需要参数"; PRIO="$2"; shift 2 ;;
+    --pkg)        [ $# -ge 2 ] || die_usage "--pkg 需要参数"; PKGLIST="$2"; shift 2 ;;
+    --verify-cpkg) VERIFY_CPKG=1; shift ;;
+    --json)       JSON_OUT=1; shift ;;
+    --no-backup)  NO_BACKUP=1; shift ;;
+    -q|--quiet)   QUIET=1; shift ;;
+    -h|--help)    usage; exit 0 ;;
+    --)           shift; break ;;
+    -*)           die_usage "未知选项 $1" ;;
+    *)            [ -z "$REPO" ] || die_usage "多余的参数 $1"; REPO="$1"; shift ;;
+  esac
+done
+
+[ -n "$REPO" ] || die_usage "缺少仓库参数（user/repo）"
+case "$REPO" in
+  */*) ;;
+  *) die_usage "仓库必须写成 user/repo" ;;
+esac
+REPO="${REPO#https://github.com/}"; REPO="${REPO#http://github.com/}"
+REPO="${REPO%.git}"; REPO="${REPO%/}"
+
+if [ -n "$PRIO" ]; then
+  case "$PRIO" in
+    ''|*[!0-9]*) die_usage "--prio 必须是非负整数" ;;
+  esac
+fi
+if [ -n "$PKGLIST" ]; then
+  case "$PKGLIST" in
+    ,*|*,|*,,*) die_usage "--pkg 列表格式非法（逗号分隔，不能有空项）" ;;
+  esac
+fi
+if [ -n "$WRITE_FILE" ] && [ -n "$REPLACE_FILE" ]; then
+  die_usage "--write 与 --replace 只能选一个"
+fi
+
+need_py() { command -v python3 >/dev/null 2>&1 || { echo "$PROG: 需要 python3 做 JSON 校验" >&2; exit 3; }; }
+need_py
+command -v curl >/dev/null 2>&1 || { echo "$PROG: 需要 curl" >&2; exit 3; }
+
+log() { [ "$QUIET" = 1 ] || echo "$@"; }
+err() { echo "$PROG: $*" >&2; }
+
+json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
+
+# ---------- 网络层：返回 body 到 $TMP_BODY，http 状态到 $HTTP_CODE ----------
+TMP_BODY="$(mktemp)"; trap 'rm -f "$TMP_BODY" "$TMP_BODY.h"' EXIT
+
+# get <url> [extra curl args...] ; 成功(2xx)返回 0
+get() {
+  local url="$1"; shift
+  HTTP_CODE="$(curl "${CURL_OPTS[@]}" "$@" -o "$TMP_BODY" -w '%{http_code}' "$url" 2>"$TMP_BODY.h")"
+  local rc=$?
+  ERR_BODY="$(cat "$TMP_BODY.h" 2>/dev/null)"
+  if [ $rc -ne 0 ]; then NET_ERR=1; return 1; fi
+  NET_ERR=0
+  [ "$HTTP_CODE" = "200" ] && return 0 || return 1
+}
+
+NET_ERR=0
+ERR_BODY=""
+HTTP_CODE=""
+EXERR=""
+
+# GitHub API 查询（核心配额 60/h 依赖认证；未认证时如实报 403/限流）
+api_get() {
+  local path="$1"
+  get "https://api.github.com$path" -H 'Accept: application/vnd.github+json' -H "User-Agent: $API_UA"
+  local rc=$?
+  # 404 = 不存在 / 无权限；403 可能是限流
+  if [ $rc -ne 0 ]; then
+    if [ "$NET_ERR" = 1 ]; then
+      EXERR="API 请求失败（网络层）: $ERR_BODY"
+    elif [ "$HTTP_CODE" = "403" ]; then
+      EXERR="API 403（可能是未认证限流；设置 GITHUB_TOKEN 后重试）"
+    elif [ "$HTTP_CODE" = "404" ]; then
+      EXERR="API 404（仓库不存在或私有）"
+    else
+      EXERR="API HTTP $HTTP_CODE"
+    fi
+  fi
+  return $rc
+}
+
+# ---------- 1. 解析默认分支 ----------
+DEFAULT_BRANCH=""
+BRANCH_SRC=""
+REPO_STATE="unknown"      # yes / no / unknown（API 404 = 不存在或私有）
+resolve_default_branch() {
+  if api_get "/repos/$REPO"; then
+    DEFAULT_BRANCH="$(python3 -c '
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    print(d.get("default_branch") or "")
+except Exception:
+    print("")
+' "$TMP_BODY")"
+    BRANCH_SRC="api"
+    REPO_STATE="yes"
+  elif [ "$HTTP_CODE" = "404" ]; then
+    REPO_STATE="no"
+  else
+    REPO_STATE="unknown"
+  fi
+}
+
+# ---------- 2. 探测 index.json ----------
+JOINED_PATHS=""
+[ -n "$PATHS_OVERRIDE" ] && DEFAULT_PATHS=(${PATHS_OVERRIDE//,/ })
+
+# 候选分支：显式 --branch > 默认分支 > main/master
+BRANCH_CANDIDATES=()
+if [ -n "$BRANCHES" ]; then
+  IFS=',' read -r -a BRANCH_CANDIDATES <<< "$BRANCHES"
+  BRANCH_SRC="explicit"
+else
+  resolve_default_branch
+  if [ "$FORCE_API" = 1 ] && [ -z "$DEFAULT_BRANCH" ]; then
+    err "无法从 GitHub API 取得默认分支（仓库不存在/私有，或 API 限流），且指定了 --api 不回退"
+    [ -n "${EXERR:-}" ] && err "$EXERR"
+    exit 3
+  fi
+  [ -n "$DEFAULT_BRANCH" ] && BRANCH_CANDIDATES+=("$DEFAULT_BRANCH")
+  for b in "${DEFAULT_BRANCHES[@]}"; do
+    [ "$b" = "$DEFAULT_BRANCH" ] && continue
+    BRANCH_CANDIDATES+=("$b")
+  done
+fi
+
+HIT_URL=""; HIT_BRANCH=""; HIT_PATH=""; HIT_REASON=""
+TRIED=()
+LAST_INVALID=""
+LAST_NET_ERR=""
+NETWORK_HARD_FAILS=0
+for br in "${BRANCH_CANDIDATES[@]}"; do
+  [ -n "$br" ] || continue
+  for p in "${DEFAULT_PATHS[@]}"; do
+    if [ "$p" = "." ] || [ -z "$p" ]; then
+      url="https://raw.githubusercontent.com/$REPO/$br/index.json"
+      label="(root)"
+    else
+      p="${p#/}"; p="${p%/}"
+      url="https://raw.githubusercontent.com/$REPO/$br/$p/index.json"
+      label="$p"
+    fi
+    TRIED+=("$br@$label")
+    if get "$url"; then
+      # 2xx：校验 JSON + 协议字段
+      reason="$(python3 - "$TMP_BODY" <<'PY'
+import json,sys
+p=sys.argv[1]
+def bad(msg):
+    print(msg); sys.exit(20)
+try:
+    raw=open(p,'rb').read()
+except Exception as e:
+    bad("读文件失败: %s"%e)
+if not raw.strip():
+    bad("空响应")
+try:
+    d=json.loads(raw.decode('utf-8'))
+except Exception as e:
+    bad("非 JSON: %s"%e)
+if not isinstance(d,dict):
+    bad("JSON 顶层不是对象")
+if 'packages' not in d:
+    bad("缺 packages 字段")
+pk=d['packages']
+if not isinstance(pk,dict):
+    bad("packages 不是对象")
+if len(pk)==0:
+    bad("packages 为空")
+n=0
+for name, vers in pk.items():
+    if not isinstance(name,str) or not name:
+        bad("包名非法")
+    if not isinstance(vers,dict) or not vers:
+        bad("包 %s 没有版本对象"%name)
+    for ver, meta in vers.items():
+        if not isinstance(meta,dict):
+            bad("包 %s@%s 元数据不是对象"%(name,ver))
+        if 'path' not in meta or not isinstance(meta['path'],str) or not meta['path']:
+            bad("包 %s@%s 缺 path"%(name,ver))
+        if 'sha256' not in meta or not isinstance(meta['sha256'],str) or len(meta['sha256'])!=64:
+            bad("包 %s@%s 缺合法 sha256"%(name,ver))
+        if 'deps' in meta and not isinstance(meta['deps'],dict):
+            bad("包 %s@%s 的 deps 不是对象"%(name,ver))
+        n+=1
+print("OK %d packages %d versions"%(len(pk),n))
+PY
+)"
+      if [ "${reason%% *}" = "OK" ]; then
+        if [ "$p" = "." ] || [ -z "$p" ]; then
+          HIT_URL="https://raw.githubusercontent.com/$REPO/$br"
+        else
+          HIT_URL="https://raw.githubusercontent.com/$REPO/$br/$p"
+        fi
+        HIT_BRANCH="$br"; HIT_PATH="$label"; HIT_REASON="$reason"
+        break 2
+      else
+        # 200 但内容不是合法索引：记录下来继续找（可能是普通 JSON 文件，不能当命中）
+        log "  · $br@$label 返回 200 但不是合法 catpm 索引：$reason"
+        LAST_INVALID="$br@$label: $reason"
+      fi
+    else
+      if [ "$NET_ERR" = 1 ]; then
+        NETWORK_HARD_FAILS=$(( ${NETWORK_HARD_FAILS:-0} + 1 ))
+        LAST_NET_ERR="$br@$label: $ERR_BODY"
+      fi
+    fi
+  done
+done
+
+if [ -z "$HIT_URL" ]; then
+  # 区分「确定不是源」「仓库不存在/私有」「网络/限流」三种情况
+  total=${#TRIED[@]}
+  if [ "$REPO_STATE" = "no" ] && [ "$FORCE_API" != 1 ]; then
+    err "未命中：GitHub API 返回 404，仓库 $REPO 不存在或是私有仓库（raw 匿名访问不可用），无法判定是否为 catpm 源"
+    [ "$JSON_OUT" = 1 ] && printf '{"repo":%s,"hit":false,"verdict":"repo-not-accessible"}\n' \
+      "$(printf '%s' "$REPO" | json_escape)"
+    exit 3
+  fi
+  hard=${NETWORK_HARD_FAILS:-0}
+  if [ "$hard" -gt 0 ] && [ "$hard" -eq "$total" ]; then
+    err "网络不可达/请求失败，无法判定（全部 $total 个候选均请求失败）"
+    [ -n "${LAST_NET_ERR:-}" ] && err "最后错误: $LAST_NET_ERR"
+    [ "$JSON_OUT" = 1 ] && printf '{"repo":%s,"hit":false,"verdict":"unreachable","error":%s}\n' \
+      "$(printf '%s' "$REPO" | json_escape)" "$(printf '%s' "${LAST_NET_ERR:-}" | json_escape)"
+    exit 3
+  fi
+  if [ -n "${LAST_INVALID:-}" ]; then
+    err "未命中：有候选返回 200 但内容不是合法 catpm 索引（$LAST_INVALID）"
+  fi
+  err "不是 catpm 源（探测 $total 个 URL 均无合法 index.json：分支 ${BRANCH_CANDIDATES[*]} × 路径 ${DEFAULT_PATHS[*]}）"
+  [ "$JSON_OUT" = 1 ] && printf '{"repo":%s,"hit":false,"verdict":"not-a-source","tried":%d}\n' \
+    "$(printf '%s' "$REPO" | json_escape)" "$total"
+  exit 1
+fi
+
+# ---------- 3. 解析命中索引 ----------
+SUMMARY="$(python3 - "$TMP_BODY" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+out=[]
+for name in sorted(d['packages']):
+    vers=d['packages'][name]
+    # 版本按数值排序（major,minor,patch）
+    def key(v):
+        parts=[]
+        for x in v.split('.'):
+            parts.append(int(x) if x.isdigit() else -1)
+        return parts
+    vs=sorted(vers, key=key)
+    deps=[]
+    for v in vs:
+        deps.append(v)
+    out.append((name, vs, vers))
+print(json.dumps(out))
+PY
+)"
+
+if [ "$JSON_OUT" = 0 ] && [ "$QUIET" = 0 ]; then
+  echo "命中：$HIT_URL"
+  echo "  仓库：$REPO    分支：$HIT_BRANCH（来源：$BRANCH_SRC）    路径：$HIT_PATH"
+  echo "  协议校验：$HIT_REASON   （index.json 为合法 JSON 对象，packages/版本/path/sha256 字段齐全）"
+  python3 - "$SUMMARY" <<'PY'
+import json,sys
+rows=json.loads(sys.argv[1])
+total=0
+for name, vs, vers in rows:
+    total+=len(vs)
+    print("  %-12s %s" % (name, ", ".join(vs)))
+print("  合计：%d 个包，%d 个版本条目" % (len(rows), total))
+PY
+fi
+
+# ---------- 4. 可选：包体抽检 ----------
+if [ "$VERIFY_CPKG" = 1 ]; then
+  log "抽检包体（HEAD + sha256）..."
+  VERIFY_RESULT="$(python3 - "$SUMMARY" "$HIT_URL" <<'PY'
+import json,sys,subprocess,tempfile,hashlib,os
+rows=json.loads(sys.argv[1]); root=sys.argv[2]
+bad=[]
+ok=0
+for name, vs, vers in rows:
+    for v in vs:
+        meta=vers[v]; url=root+"/"+meta['path']
+        # HEAD 取长度
+        r=subprocess.run(["curl","-sSI","--max-time","25","-L","-A","catpm-probe/1.0",url],capture_output=True,text=True)
+        cl=""
+        for line in r.stdout.splitlines():
+            if line.lower().startswith("content-length:"):
+                cl=line.split(":",1)[1].strip()
+        # GET 实测 sha256（包体积小；逐个下载）
+        with tempfile.NamedTemporaryFile(delete=False) as f: tmp=f.name
+        r2=subprocess.run(["curl","-sS","--max-time","60","-L","-A","catpm-probe/1.0","-o",tmp,url],capture_output=True,text=True)
+        if r2.returncode!=0:
+            bad.append("%s@%s 下载失败: %s"%(name,v,r2.stderr.strip())); os.unlink(tmp); continue
+        h=hashlib.sha256(open(tmp,'rb').read()).hexdigest(); os.unlink(tmp)
+        if h!=meta['sha256']:
+            bad.append("%s@%s sha256 不符（索引 %s，实测 %s）"%(name,v,meta['sha256'],h))
+        else:
+            ok+=1
+            print("  ok  %-12s %-8s %s bytes  sha256=%s"%(name,v,cl or "?",h[:16]+"…"))
+print("VERIFY %d ok, %d bad"% (ok,len(bad)))
+for b in bad: print("  BAD "+b)
+sys.exit(0 if not bad else 21)
+PY
+)"
+  vrc=$?
+  printf '%s\n' "$VERIFY_RESULT"
+  if [ $vrc -ne 0 ]; then
+    err "包体抽检失败（见上），不写入源清单"
+    exit 3
+  fi
+fi
+
+# ---------- 5. 写入 package.where ----------
+write_source_line() {
+  local file="$1"
+  local line="$HIT_URL"
+  [ -n "$PRIO" ] && line="$line prio=$PRIO"
+  [ -n "$PKGLIST" ] && line="$line pkg=$PKGLIST"
+  if [ -f "$file" ] && awk '{print $1}' "$file" 2>/dev/null | grep -qxF -- "$HIT_URL"; then
+    err "注意：$file 已包含该源地址，不重复写入"
+    return 0
+  fi
+  # 改动前自动备份（--no-backup 可关闭）
+  if [ -f "$file" ] && [ "$NO_BACKUP" != 1 ]; then
+    BAK="$file.bak.$(date +%Y%m%d-%H%M%S)"
+    cp -p "$file" "$BAK"
+    echo "  已备份原清单 -> $BAK"
+    echo "  撤销：cp -p '$BAK' '$file'"
+  fi
+  # 需要换行结尾
+  if [ -f "$file" ] && [ -s "$file" ] && [ "$(tail -c1 "$file")" != "" ]; then
+    printf '\n' >> "$file"
+  fi
+  printf '%s\n' "$line" >> "$file"
+  echo "  已追加到 $file：$line"
+}
+
+if [ -n "$WRITE_FILE" ]; then
+  mkdir -p "$(dirname "$WRITE_FILE")"
+  if [ ! -f "$WRITE_FILE" ]; then
+    { echo "# catpm source list v1 (apt sources.list style)"; echo "$MARKER"; } > "$WRITE_FILE"
+  fi
+  echo "写入 $WRITE_FILE（追加模式）"
+  write_source_line "$WRITE_FILE"
+elif [ -n "$REPLACE_FILE" ]; then
+  mkdir -p "$(dirname "$REPLACE_FILE")"
+  if [ -f "$REPLACE_FILE" ] && [ "$NO_BACKUP" != 1 ]; then
+    BAK="$REPLACE_FILE.bak.$(date +%Y%m%d-%H%M%S)"
+    cp -p "$REPLACE_FILE" "$BAK"
+    echo "  已备份原清单 -> $BAK"
+    echo "  撤销：cp -p '$BAK' '$REPLACE_FILE'"
+  fi
+  tmpf="$(mktemp)"
+  { echo "# catpm source list v1 (apt sources.list style)"; echo "$MARKER"; \
+    echo "# generated by catpm-probe on $(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "$tmpf"
+  line="$HIT_URL"; [ -n "$PRIO" ] && line="$line prio=$PRIO"; [ -n "$PKGLIST" ] && line="$line pkg=$PKGLIST"
+  echo "$line" >> "$tmpf"
+  mv -f "$tmpf" "$REPLACE_FILE"
+  # 与 catpm 安装器生成的清单权限保持一致（mktemp 默认 0600）
+  chmod 0644 "$REPLACE_FILE" 2>/dev/null || true
+  echo "写入 $REPLACE_FILE（替换模式）"
+  echo "  $line"
+fi
+
+if [ "$JSON_OUT" = 1 ]; then
+  python3 - "$SUMMARY" "$REPO" "$HIT_URL" "$HIT_BRANCH" "$HIT_PATH" <<'PY'
+import json,sys
+rows=json.loads(sys.argv[1])
+pk={}
+for name, vs, vers in rows:
+    pk[name]={v:vers[v].get('path') for v in vs}
+print(json.dumps({"repo":sys.argv[2],"hit":True,"url":sys.argv[3],"branch":sys.argv[4],
+                  "path":sys.argv[5],"protocol":"catpm source layer 4 (index.json)",
+                  "packages":pk}, ensure_ascii=False, indent=1))
+PY
+fi
+
+exit 0

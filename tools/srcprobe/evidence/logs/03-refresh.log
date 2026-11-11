@@ -1,0 +1,58 @@
+### 刷新源（catpm update）真实执行（原始输出）
+## 2026-11-11T15:55:54Z  cwd=/root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/srcprobe/work/proj
+== 0. 说明：catpm 0.5.5 的索引缓存是「项目内」的（.catpm-cache/index-cache），无全局缓存；
+      在服务器主项目目录执行 update 即刷新该项目的源缓存。
+== 1. catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+
+== 2. catpm update（--version 确认二进制）
+catpm 0.5.5 (for CatBase 0.1.8)
+catpm: refreshing package index from 2 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (first refresh)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry  5 entries (first refresh)
+catpm: index cache updated: 2 ok, 0 failed, 14 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+exit=0
+
+== 3. 缓存目录结构
+.catpm-cache/index-cache/9beeaa055971df3b.json  755 bytes
+.catpm-cache/index-cache/f245d88bf66af72d.json  1601 bytes
+.catpm-cache/index-cache/meta.json  475 bytes
+
+== 4. meta.json
+{
+    "fetched_at": {
+        "https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry": 1794412554,
+        "https://raw.githubusercontent.com/monikalnbo/catpm-registry/main": 1794412554
+    },
+    "roots": [
+        "https://raw.githubusercontent.com/monikalnbo/catpm-registry/main",
+        "https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry"
+    ],
+    "counts": {
+        "https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry": 5,
+        "https://raw.githubusercontent.com/monikalnbo/catpm-registry/main": 9
+    }
+}
+
+== 5. 逐源比对：缓存文件字节 == 上游 index.json 字节（sha256）
+--- source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main   cache-key=f245d88bf66af72d.json
+c003a11112ca7e6cb68922556efacda07807194e32225ca8a35323624d23e483  .catpm-cache/index-cache/f245d88bf66af72d.json
+0cc4d33059b6992b72b6ea57583f997fb2a8b25ba4e66699d1949ffc1231eb46  /tmp/upstream-f245d88bf66af72d.json
+BYTE-IDENTICAL no
+packages: ['catpm', 'fmtx', 'hashx', 'hellox', 'loganx', 'mathx', 'randx', 'stringx', 'timex']
+entries: 9
+--- source: https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry   cache-key=9beeaa055971df3b.json
+9595d8a3cdf396510aab75ecc302da34851b2ac3ed2a8433f717f9b44107b3e9  .catpm-cache/index-cache/9beeaa055971df3b.json
+9595d8a3cdf396510aab75ecc302da34851b2ac3ed2a8433f717f9b44107b3e9  /tmp/upstream-9beeaa055971df3b.json
+BYTE-IDENTICAL yes
+packages: ['fmtx', 'loganx', 'mathx', 'stringx']
+entries: 5
+
+== 6. 再跑一次 update（应显示 no change，证明缓存即时可读）
+catpm: refreshing package index from 2 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (no change)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm/c78a90f/registry  5 entries (no change)
+catpm: index cache updated: 2 ok, 0 failed, 14 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+exit=0

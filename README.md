@@ -64,7 +64,7 @@ export PATH="$HOME/.local/bin:$PATH"
 fish_add_path ~/.local/bin
 ```
 
-然后 `catpm --version` 验证（应输出 `catpm 0.5.5 (for CatBase 0.1.8)`；若源上有更新版本，会像 pip 一样追加一行提示）。
+然后 `catpm --version` 验证（应输出 `catpm 0.5.5 (for CatBase 0.1.8+)`；若源上有更新版本，会像 pip 一样追加一行提示）。
 
 ### 从源码构建
 
@@ -352,6 +352,8 @@ catpm/src2/          PM 源码（catpm.cat v0.5.5 + ver.catc + util.catc + test_
 catpm/catpm55        编译好的 x86_64 Linux 二进制（v0.5.5，324,976 B；catpm54/catpm53/catpm52 为旧版）
 diffs/               发版前源码 diff（v0.5.0..v0.5.1、v0.5.1..v0.5.2、v0.5.2..v0.5.3、v0.5.3..v0.5.4、v0.5.4..v0.5.5；发版规则见 §5c）
 docs/                专题手册：guide.md（教程速查）/ perf.md（性能实测）/ release.md（发版 checklist）/ registry.md（源操作手册）
+docs/updates/        更新记录：每次更新一份独立文档（做了什么 / 解决了什么 / 修了什么 bug），约定见该目录 README
+tools/srcprobe/      源探测工具：probe（人话外壳）/ catpm-probe（引擎）/ catpm-quickstart（一条命令全链路）+ GUIDE.md + evidence/ 原始日志
 catpm/package.where  默认源清单（指向 catpm-registry 仓库 GitHub raw）
 install.sh           POSIX sh 安装器（sh/bash/zsh 通用，curl | sh 一键装）
 install.fish         fish 原生安装器（curl | source）
@@ -433,6 +435,19 @@ bash scripts/e2e_v9.sh     # v0.5.5 中断恢复 → logs/build9.log + run9.log
 bash probe/run_probes.sh   # 语法探针套件 → logs/syntax-probe.log
 ```
 
-## 9. 许可
+## 9. 更新记录与规矩
+
+每次更新都在 [docs/updates/](docs/updates/) 单独建一份文档，写清三件事：**这次做了什么、解决了什么问题、修了什么 bug**，
+并随代码一起提交推送。最近一次：[2026-11-11 源探测工具 + 服务器源清单](docs/updates/2026-11-11-srcprobe-and-registry.md)。
+
+源探测工具在 `tools/srcprobe/`，不会用命令也能上手：`GUIDE.md` 是中文新手指南，先看它。
+
+```bash
+tools/srcprobe/probe monikalnbo/catpm-registry                 # 看这个仓库有没有源（只看不改）
+tools/srcprobe/probe monikalnbo/catpm-registry --add           # 有源就写进清单（自动备份 + 打印回滚）
+tools/srcprobe/catpm-quickstart monikalnbo/catpm-registry hellox 1.0.0   # 探测→写清单→刷新→真实下载
+```
+
+## 10. 许可
 
 MIT（见 [LICENSE](LICENSE)）。[catpm-registry](https://github.com/monikalnbo/catpm-registry) 里的包同为 MIT。

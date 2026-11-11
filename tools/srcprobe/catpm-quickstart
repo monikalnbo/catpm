@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# catpm-quickstart —— 一条命令跑完整条链路：探测源 → 写入清单 → 刷新索引 → 真实下载安装
+#
+# 用法：
+#   catpm-quickstart <owner>/<repo> <包名> [包版本]
+#   catpm-quickstart monikalnbo/catpm-registry hellox 1.0.0
+#
+# 做的事（每一步都会打印中文说明）：
+#   1. 检查这个仓库有没有 catpm 源（没有就停下，什么都不改）
+#   2. 备份服务器源清单，并把这条源加进去（已有则跳过）
+#   3. 在固定目录 ~/catpm-demo 刷新索引（catpm update）
+#   4. 从源真实下载安装指定包，并校验 sha256
+#   5. 打印结果和回滚方法
+#
+# 可选环境变量：
+#   CATPM_WHERE_FILE  服务器清单路径（默认 /root/.local/bin/package.where）
+#   CATPM_DEMO_DIR    下载安装的演示项目目录（默认 ~/catpm-demo）
+#   CATPM_PRIO        写入源的优先级（默认 5，官方源是 10）
+set -u
+
+PROG=catpm-quickstart
+WHERE="${CATPM_WHERE_FILE:-/root/.local/bin/package.where}"
+DEMO="${CATPM_DEMO_DIR:-$HOME/catpm-demo}"
+PRIO="${CATPM_PRIO:-5}"
+CATPM_BIN="$(command -v catpm || echo /root/.local/bin/catpm)"
+# 如果用户用 CATPM_WHERE_FILE 指定了清单，让后续 catpm 命令也读同一份
+# （catpm 本身认 CATPM_WHERE；这样演示/沙箱才不会误读默认清单）
+if [ -n "${CATPM_WHERE_FILE:-}" ] && [ -z "${CATPM_WHERE:-}" ]; then export CATPM_WHERE="$WHERE"; fi
+
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
+say()  { echo; echo "== $*"; }
+die()  { echo; echo "$PROG：$*" >&2; exit 2; }
+
+[ $# -ge 2 ] || { usage; exit 2; }
+REPO="$1"; PKG="$2"; VER="${3:-}"
+[ -x "$CATPM_BIN" ] || die "找不到 catpm 命令（应先安装 catpm；本机在 /root/.local/bin/catpm）"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PROBE="$HERE/probe"; [ -x "$PROBE" ] || PROBE="$(command -v probe || true)"
+[ -n "$PROBE" ] && [ -x "$PROBE" ] || die "找不到 probe 命令（应与本脚本放在一起）"
+
+say "第 1 步 / 4：检查 $REPO 里有没有 catpm 源，有就写进服务器清单"
+WHERE_BEFORE_HAD_SRC=0
+if [ -f "$WHERE" ] && grep -q . "$WHERE" 2>/dev/null; then WHERE_BEFORE_HAD_SRC=1; fi
+if ! "$PROBE" "$REPO" --add --prio "$PRIO"; then
+  echo
+  echo "这个仓库没有可用的源，后面的步骤不再执行（服务器清单没有改动）。"
+  exit 1
+fi
+
+say "第 2 步 / 4：确认服务器清单"
+echo "当前清单：$WHERE"
+sed 's/^/  /' "$WHERE"
+
+say "第 3 步 / 4：刷新索引（catpm update）"
+mkdir -p "$DEMO" && cd "$DEMO" || die "无法进入 $DEMO"
+[ -f catpm.json ] || "$CATPM_BIN" init >/dev/null
+"$CATPM_BIN" update || die "刷新索引失败（检查网络，或 catpm sources 看源可达性）"
+
+say "第 4 步 / 4：从源真实下载安装 $PKG${VER:+@$VER}"
+SPEC="$PKG"; [ -n "$VER" ] && SPEC="$PKG@$VER"
+"$CATPM_BIN" add "$SPEC" || die "安装失败（包名或版本可能不在源里，先看上面列出的可用版本）"
+
+say "结果"
+echo "已安装（$DEMO/deps）："
+"$CATPM_BIN" list | sed 's/^/  /'
+echo
+echo "包体缓存与 sha256（与索引里的值比对过，一致才会安装）："
+for f in "$DEMO"/.catpm-cache/*/*.cpkg; do
+  [ -f "$f" ] || continue
+  echo "  $(sha256sum "$f" | cut -d' ' -f1)  ${f#$DEMO/}"
+done
+echo
+echo "回滚（如果不想要刚才加的源）："
+LATEST_BAK="$(ls -1t "$WHERE".bak.* 2>/dev/null | head -1)"
+if [ -n "$LATEST_BAK" ]; then
+  echo "  cp -p '$LATEST_BAK' '$WHERE' && $CATPM_BIN update"
+elif [ "$WHERE_BEFORE_HAD_SRC" = 0 ]; then
+  echo "  清单是这次新建的，直接删除文件再重新装即可： rm -f '$WHERE'"
+else
+  echo "  本次清单没有新增内容（这条源原本就在），无需回滚。"
+fi
