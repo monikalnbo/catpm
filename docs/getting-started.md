@@ -1,6 +1,6 @@
 # catpm 上手指南（Getting Started）
 
-面向第一次点开本仓库的读者，四件事讲完：catpm 能干什么、怎么安装、装完之后每一步怎么做（重点——照着走到第一个能跑的程序）、以及它能帮你做什么。文中每条命令与回显都来自真实仓库与实测日志（本次逐条复验存档于 `logs/getting-started.log`，其余出处见文末）；权威命令清单以 [README.md](../README.md) §3 为准，协议细节以 [PROTOCOL.md](../PROTOCOL.md) 为准。
+面向第一次点开本仓库的读者，四件事讲完：catpm 能干什么、怎么安装、装完之后每一步怎么做（重点——照着走到第一个能跑的程序）、以及它能帮你做什么；最后再补一节进阶——怎么挂上你自己的包仓库。文中每条命令与回显都来自真实仓库与实测日志（本次逐条复验存档于 `logs/getting-started.log`，其余出处见文末）；权威命令清单以 [README.md](../README.md) §3 为准，协议细节以 [PROTOCOL.md](../PROTOCOL.md) 为准。
 
 ## 一、它能干什么
 
@@ -78,17 +78,35 @@ def main() {
 
 最后一句心里话：这份指南里的每个动作都是真跑过的——装过、装包过、编译运行过、删过、刷过索引、升过级、连三种失败都专门造出来验证过。照着敲，遇到的和文中说的应该是同一个世界；万一不是，文末的出处清单能帮你逐条对账。
 
+## 五、进阶：挂上你自己的包仓库
+
+基础闭环走完了。如果你还想更进一步——不管是想用别人的源，还是想把自己的包仓库挂起来给别人用——都在这一节。
+
+**使用方：添加与切换第三方源。** `catpm sources` 是查看命令：它列出每个源的优先级、类型、服务范围和实测可达性，但添加源不靠它，靠改 `package.where` 文件。这个文件有三处可写，catpm 按顺序找：用 `CATPM_WHERE=<路径>` 指定的那份 → 项目目录里的 `./package.where` → 二进制旁边的 `~/.local/bin/package.where`（装好后默认就在这里，默认源就是 catpm-registry 的 GitHub raw 地址），都没有时才回退老的 `CATPM_REGISTRY=<dir|URL>` 单源写法。实测：项目里放一份 `./package.where`，`catpm sources` 立刻回 `catpm: sources from ./package.where`；改用 `CATPM_WHERE=/tmp/where-alt`，它回 `catpm: sources from /tmp/where-alt`——两处都会盖过默认清单。
+
+源清单一行一个源，`prio=` 定优先级，比如把自己的源排在官方源前面：
+
+```text
+/my/registry-dir                                        prio=10
+https://raw.githubusercontent.com/<user>/<repo>/main   prio=1
+```
+
+添加之后就照常 add／install，解析自动变成多源并集、下载按 prio 从高到低试。实测回显长这样：`resolving dependencies (source: 2 source(s): /tmp/my-reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)`；`catpm add demox` 的下载行来自新源（`prefetch demox@0.1.0 <- /tmp/my-reg/demox/demox-0.1.0.cpkg`），同一项目里 `catpm add timex` 又自动落到 GitHub 源——一个项目混用两个源，互不干扰。某一路源挂了也不致命：`catpm sources` 会标 `UNREACHABLE`、命令打个 warning 继续用其余源；要找的包哪都没有时，回 `package not found in any source: <包名>` 并附 `searched:` 列出它实际查过的源。还可以给某个源加 `pkg=demox` 钉定——它就只参与这几个包的解析（`sources` 的 serves 列会如实显示），跟 apt 的 pin 一个思路。
+
+**提供方：把自己的仓库挂起来。** 一个 registry 就是一个目录：一份 `index.json` 加 `<包名>/<包名>-<版本>.cpkg` 归档，仅此而已。本地目录直接就能当源；要挂到网上，GitHub 仓库天然满足——raw 地址就是源地址（官方的 catpm-registry 本身就是这么跑的）。发布三步：在包目录里 `catpm pack`；`catpm publish <registry 目录>`；git 提交推送。实测回显：`catpm: published demox@0.1.0`，跟着两行 `-> /tmp/my-reg/demox/demox-0.1.0.cpkg` 和 `-> index.json updated (sha256 ...)`——索引是 publish 自动维护的，不用手写。一个实测出来的细节：publish 不会替你建目录，先 `mkdir` 再 publish，漏了会回你一句 `registry directory not found`。两个老坑再提一遍：仓库的 `.gitignore` 不能含 `*.cpkg`（否则归档上不了库、索引却更新了）；raw 传播有一点延迟，推完稍等片刻。都做完之后，别人只需把你的 raw 地址写进他的 `package.where`（就是上面那个两行的例子反过来用），一句 `catpm add <你的包>` 就能装到。
+
 ## 附：证据出处清单
 
 - 本文各步回显：`logs/getting-started.log`（[A] 安装／[B] 版本与源／[C] init＋add＋list／[D] 编译运行／[E] outdated／[F] update＋upgrade／[G] remove／[H] 幂等 self-update／[I] 0.5.0→0.5.5 升级路径，对线上 v0.5.5 实测）。
 - 传递依赖拒绝删除、install 认锁的锁语义：`logs/run4.log` [2/6][3/6]。
 - self-update 钉版本语法与三种失败回退：`logs/selfupdate5.log` [1/5]–[5/5]。
 - 中断恢复（被杀重跑即续）：`logs/run11-local.log`（方法与场景详见 [guide.md](guide.md) 进阶篇）。
+- 添加／切换第三方源与自建 registry：`logs/own-registry.log`（提供方 pack＋publish、使用方 ./package.where 与 CATPM_WHERE、双源 prio、pkg= 钉定、不可达与 not found 回显，对 v0.5.5 现场实测）；多源原始六场景另见 `logs/where3.log`；GitHub 当源的三步流程见 `scripts/publish-remote.md` 与 [registry.md](registry.md)。
 - 安装脚本行为与四 shell 实装：`install.sh`、`install.fish`、`logs/run4.log` [5/6]。
 - 权威命令清单与说明符表：[README.md](../README.md) §3；四层协议：[PROTOCOL.md](../PROTOCOL.md)。
 
 ## 附：自查
 
-1. 四件事齐全：一（能干什么）→ 二（怎么安装）→ 三（装完每一步怎么做，八步到第一个程序跑起来）→ 四（收尾认知）。
+1. 四件事齐全：一（能干什么）→ 二（怎么安装）→ 三（装完每一步怎么做，八步到第一个程序跑起来）→ 四（收尾认知）；另补进阶节五（挂上自己的包仓库，使用方与提供方两视角）。
 2. 命令与输出可溯源：正文回显逐字取自 `logs/getting-started.log` 与上述日志；未实测的写法（登录会话持久 PATH、降级到旧版本）均如实注明。
-3. 仅保留两条短代码块（单行安装命令、实测验证程序原文），其余为行内代码；正文不罗列统计数字；中文标点全角（命令与代码除外）。
+3. 仅保留三条短代码块（单行安装命令、实测验证程序原文、双源源清单示例），其余为行内代码；正文不罗列统计数字；中文标点全角（命令与代码除外）。

@@ -1,0 +1,105 @@
+
+==================================================
+== OWN-REGISTRY VERIFY — provider + consumer  2026-11-11 05:20:40Z
+==================================================
+
+==================================================
+== [P1] provider: a fresh package demox
+==================================================
+catpm: packed demox@0.1.0 -> dist/demox-0.1.0.cpkg
+  size: 325 bytes   sha256: 6b1406fe2fcf96a9527cc08f415b7a01f8f754685159f9d705aef42d729d3f41
+
+
+==================================================
+== [P2] provider: publish into a fresh registry dir /tmp/my-reg
+==================================================
+catpm: published demox@0.1.0
+  -> /tmp/my-reg/demox/demox-0.1.0.cpkg
+  -> /tmp/my-reg/index.json updated (sha256 6b1406fe2fcf96a9...)
+--- /tmp/my-reg/index.json ---
+{"packages":{"demox":{"0.1.0":{"sha256":"6b1406fe2fcf96a9527cc08f415b7a01f8f754685159f9d705aef42d729d3f41","deps":{},"path":"demox/demox-0.1.0.cpkg"}}}}
+
+--- /tmp/my-reg layout ---
+/tmp/my-reg/demox/demox-0.1.0.cpkg
+/tmp/my-reg/index.json
+
+==================================================
+== [C1] consumer: sources BEFORE adding (default, binary-adjacent)
+==================================================
+catpm: sources from /tmp/gs-home/.local/bin/package.where
+  prio kind root                                        serves       status
+  0     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+
+==================================================
+== [C2] consumer adds the third-party source via project-local ./package.where (prio beats default)
+==================================================
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/my-reg                                (all)       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+
+
+==================================================
+== [C3] consumer: add demox — must come from the new source
+==================================================
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+catpm: added demox 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/my-reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - demox@0.1.0
+catpm: installing into ./deps/
+  prefetch demox@0.1.0 <- /tmp/my-reg/demox/demox-0.1.0.cpkg
+  cached .catpm-cache/demox/demox-0.1.0.cpkg
+  installed demox@0.1.0 (sha256 ok) -> deps/demox/index.catc
+catpm: wrote catpm.lock
+
+
+==================================================
+== [C4] consumer: add timex at the same time — must come from the GitHub fallback source
+==================================================
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/my-reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demox@0.1.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demox/demox-0.1.0.cpkg
+  installed demox@0.1.0 (sha256 ok) -> deps/demox/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+
+installed packages in ./deps:
+  demox  0.1.0
+  stringx  0.3.0
+  timex  0.1.0
+--- lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+demox 0.1.0
+timex 0.1.0
+stringx 0.3.0
+
+==================================================
+== [C5] same via CATPM_WHERE (no project-local file)
+==================================================
+catpm: sources from /tmp/where-alt
+  prio kind root                                        serves       status
+  10    dir  /tmp/my-reg                                (all)       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+
+==================================================
+== [C6] per-source package pinning pkg= (third-party source only serves demox)
+==================================================
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/my-reg                                demox       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+
+END OF OWN-REGISTRY VERIFY

@@ -114,6 +114,8 @@ catpm sources                     # 列出源清单（prio/类型/钉定/可达�
 
 包从哪里拉，由这个**用户可改写的文本文件**决定，改源不需要改任何代码。查找顺序：`CATPM_WHERE` → `./package.where` → **catpm 二进制所在目录**（即与 PM 同仓库，默认形态）→ 回退 `CATPM_REGISTRY`/`./registry`。
 
+> **想挂自己的包仓库（添加第三方源／自建 registry 给别人用）**：两个视角的逐步实测回显见 **[docs/getting-started.md](docs/getting-started.md) §五**（依据 `logs/own-registry.log`）。
+
 ```
 # catpm source list v1（apt sources.list 式；# 注释、空行忽略）
 # <dir-or-URL> [prio=N] [pkg=name1,name2]
