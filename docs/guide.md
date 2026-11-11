@@ -2,7 +2,7 @@
 
 仓库内有两份教程文章，按时间顺序阅读：
 
-1. **上手篇**：怎么装到手、怎么 add/remove、怎么做包发布、怎么更新依赖与自身——覆盖 v0.5.0 时代的基础四块。
+1. **[上手篇](getting-started.md)**：怎么装到手、怎么 add/remove、怎么做包发布、怎么更新依赖与自身——基础四块，逐步回显对 v0.5.5 现场复验（[docs/getting-started.md](getting-started.md)）。
 2. **进阶篇**（v0.5.5 新增）：apt 式 update/upgrade 分工与索引缓存、任意时刻被杀重跑即续的中断恢复、self-update 日常节奏、性能优化叙事、成文的发版规矩。
 
 两篇都以真实命令与实测日志为据（各文末附出处清单），教程中的命令随版本演进可能微调，**权威用法以 [README.md](../README.md) §3 命令清单为准，协议细节以 [PROTOCOL.md](../PROTOCOL.md) 为准**。

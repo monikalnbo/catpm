@@ -1,0 +1,148 @@
+
+==================================================
+== GETTING-STARTED VERIFY — against live v0.5.5  2026-11-11 05:14:31Z
+==================================================
+
+==================================================
+== [A] curl | sh install (clean HOME=/tmp/gs-home)
+==================================================
+catpm-install: downloading catpm (catpm55) + package.where
+catpm-install: installed: /tmp/gs-home/.local/bin/catpm
+catpm-install:         +  /tmp/gs-home/.local/bin/package.where  (default source: catpm-registry)
+
+catpm-install: '/tmp/gs-home/.local/bin' is not in your PATH yet. Add ONE of these to your shell init:
+
+  bash (~/.bashrc):
+    export PATH="/tmp/gs-home/.local/bin:$PATH"
+
+  zsh (~/.zshrc):
+    export PATH="/tmp/gs-home/.local/bin:$PATH"
+
+  fish (~/.config/fish/config.fish):
+    fish_add_path /tmp/gs-home/.local/bin
+
+catpm-install: then restart the shell (or re-source the file) and run: catpm --version
+catpm 0.5.5 (for CatBase 0.1.8)
+installer rc=0
+
+==================================================
+== [B] version + sources (absolute path)
+==================================================
+catpm 0.5.5 (for CatBase 0.1.8)
+catpm: sources from /tmp/gs-home/.local/bin/package.where
+  prio kind root                                        serves       status
+  0     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+
+==================================================
+== [C] init + add timex (pure HTTPS) + list
+==================================================
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 2 package(s):
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+installed packages in ./deps:
+  stringx  0.3.0
+  timex  0.1.0
+--- catpm.json / catpm.lock ---
+{"deps":{"timex":"latest"},"name":"my-project","catpm":"0.5.5"}
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+timex 0.1.0
+stringx 0.3.0
+
+==================================================
+== [D] main.cat + catcc compile + run
+==================================================
+Invoking CatBase bin compiler...
+Compilation successful.
+== tutorial verify: timex from catpm-registry ==
+timex.iso8601() =  2026-11-11T05:14:38Z
+timex.stamp('hi') =  [05:14:38] hi
+stringx.shout('ok') =  OK!
+app exit=0
+
+==================================================
+== [E] outdated
+==================================================
+  package   current   newest
+  stringx   0.3.0     0.3.0
+  timex     0.1.0     0.1.0
+  (all up to date)
+
+==================================================
+== [F] update (apt-style) then upgrade (observe)
+==================================================
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry/main  9 entries (no change)
+catpm: index cache updated: 1 ok, 0 failed, 9 entries total (age out after 86400s; override with CATPM_INDEX_TTL)
+update exit=0
+catpm: upgrading (re-resolving catpm.json from sources)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 2 package(s):
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+upgrade exit=0
+  package   current   newest
+  stringx   0.3.0     0.3.0
+  timex     0.1.0     0.1.0
+  (all up to date)
+
+==================================================
+== [G] remove timex (direct dep; expect stringx pruned as orphan)
+==================================================
+catpm: removed timex from catpm.json
+catpm: no dependencies in catpm.json (writing empty lock, pruning)
+catpm: pruned deps/stringx (no longer needed)
+catpm: pruned deps/timex (no longer needed)
+exit=0
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+
+==================================================
+== [H] self-update on current binary (expect up to date)
+==================================================
+catpm: current version 0.5.5
+catpm: target version  0.5.5
+catpm: already up to date
+exit=0
+
+==================================================
+== [I] old 0.5.0 binary -> self-update -> current (live HTTPS)
+==================================================
+BEFORE:
+catpm 0.5.0 (for CatBase 0.1.8)
+catpm: current version 0.5.0
+catpm: target version  0.5.5
+  downloading catpm@0.5.5 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/catpm/catpm-0.5.5.cpkg
+  sha256 ok (bd986c3e9d3ced66...)
+  candidate verified: catpm 0.5.5 (for CatBase 0.1.8)
+catpm: updated /tmp/gs-prefix/bin/catpm -> 0.5.5
+catpm: now: catpm 0.5.5 (for CatBase 0.1.8)
+exit=0
+AFTER:
+catpm 0.5.5 (for CatBase 0.1.8)
+catpm
+package.where
+
+END OF GETTING-STARTED VERIFY

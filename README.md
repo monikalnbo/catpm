@@ -3,7 +3,7 @@
 catpm 是一个用 **CatBase v0.1.8** 语言编写、由本机 `catcc 0.1.8`（Zig 0.14.1 后端）编译为原生 ELF 二进制的依赖包管理器：版本说明符、lock 文件、打包发布、本地/远程多源、sha256 校验、下载缓存、apt sources.list 式的 `package.where` 源清单、预编译二进制包（v0.5.3）、apt update 式索引缓存 + pip 式新版本提示（v0.5.4）、**中断恢复：任意时刻被杀重跑即续 + 并行下载（v0.5.5）**，一应俱全——全部用一门新语言实现。
 
 > 协议规范独立成文档：**[PROTOCOL.md](PROTOCOL.md)**（清单层 / 解析层 / 封装层 / 源层，四层；源层含 package.where 规范 §4.0、仓库与发版产物规范 §4.6a/§4.6b）。
-> 专题手册：**[docs/guide.md](docs/guide.md)**（教程速查：上手 + 进阶）、**[docs/perf.md](docs/perf.md)**（性能实测：catpm vs apt vs cargo）、**[docs/release.md](docs/release.md)**（发版 checklist）、**[docs/registry.md](docs/registry.md)**（源与发布操作手册）。
+> 专题手册：**[docs/getting-started.md](docs/getting-started.md)**（上手指南：从安装到第一个程序跑通，逐步实测回显）、**[docs/guide.md](docs/guide.md)**（教程速查：上手 + 进阶）、**[docs/perf.md](docs/perf.md)**（性能实测：catpm vs apt vs cargo）、**[docs/release.md](docs/release.md)**（发版 checklist）、**[docs/registry.md](docs/registry.md)**（源与发布操作手册）。
 > **v0.4 起仓库分离**：包集中在专用仓库 **[monikalnbo/catpm-registry](https://github.com/monikalnbo/catpm-registry)**；本仓库只保留 PM 本体（源码、二进制、package.where、文档、安装脚本、日志）。
 
 ---
