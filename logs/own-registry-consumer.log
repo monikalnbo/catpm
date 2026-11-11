@@ -1,0 +1,933 @@
+==================================================
+== SOURCES / OWN REGISTRY — consumer side  2026-11-11T05:41:04Z
+== catpm catpm 0.5.5 (for CatBase 0.1.8)
+== raw run logs concatenated in order; nothing edited
+==================================================
+
+########## part a — /tmp/ownrt-a.(sh|log) ##########
+catpm 0.5.5 (for CatBase 0.1.8)
+
+==================================================
+== [0] default source, before any config
+==================================================
+$ catpm sources
+catpm: sources from /root/.local/bin/package.where
+  prio kind root                                        serves       status
+  0     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+
+==================================================
+== [1] provider: build a package demoy and publish it into an empty registry dir
+==================================================
+$ catpm pack
+catpm: packed demoy@0.1.0 -> dist/demoy-0.1.0.cpkg
+  size: 277 bytes   sha256: cde0e89a061b85eeb12985f9cc136d10281282000eb4c91b5259fc17c1051d89
+exit=0
+$ catpm publish /tmp/ownrt-work/reg
+catpm: published demoy@0.1.0
+  -> /tmp/ownrt-work/reg/demoy/demoy-0.1.0.cpkg
+  -> /tmp/ownrt-work/reg/index.json updated (sha256 cde0e89a061b85ee...)
+exit=0
+--- /tmp/ownrt-work/reg layout ---
+/tmp/ownrt-work/reg/catpm.json
+/tmp/ownrt-work/reg/demoy/demoy-0.1.0.cpkg
+/tmp/ownrt-work/reg/dist/demoy-0.1.0.cpkg
+/tmp/ownrt-work/reg/index.catc
+/tmp/ownrt-work/reg/index.json
+--- index.json ---
+{"packages":{"demoy":{"0.1.0":{"sha256":"cde0e89a061b85eeb12985f9cc136d10281282000eb4c91b5259fc17c1051d89","deps":{},"path":"demoy/demoy-0.1.0.cpkg"}}}}
+
+==================================================
+== [2] provider: publish into a dir that does not exist yet
+==================================================
+$ catpm publish /tmp/ownrt-work/reg-nope
+catpm: registry directory not found: /tmp/ownrt-work/reg-nope
+exit=1
+
+==================================================
+== [3] consumer: project-local ./package.where adds the new source
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+--- ./package.where ---
+# my own registry first, upstream as fallback
+/tmp/ownrt-work/reg                    prio=10
+https://raw.githubusercontent.com/monikalnbo/catpm-registry/main   prio=1
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        (all)       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+
+==================================================
+== [4] consumer: add the local package + an upstream package in one project
+==================================================
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - demoy@0.1.0
+catpm: installing into ./deps/
+  prefetch demoy@0.1.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.1.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.1.0.cpkg
+  installed demoy@0.1.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm add timex
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.1.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.1.0.cpkg
+  installed demoy@0.1.0 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [5] consumer: clean install from the lock (deps/cache/lock removed first)
+==================================================
+$ catpm install
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.1.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch demoy@0.1.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.1.0.cpkg
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.1.0.cpkg
+  installed demoy@0.1.0 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- deps ---
+demoy
+stringx
+timex
+--- catpm.lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+demoy 0.1.0
+timex 0.1.0
+stringx 0.3.0
+
+==================================================
+== [6] consumer: env CATPM_WHERE overrides ./package.where
+==================================================
+$ CATPM_WHERE=/tmp/ownrt-work/where-env catpm sources
+catpm: sources from /tmp/ownrt-work/where-env
+  prio kind root                                        serves       status
+  20    dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+
+==================================================
+== [7] consumer: a missing CATPM_WHERE path
+==================================================
+$ CATPM_WHERE=/tmp/ownrt-work/missing catpm sources
+catpm: CATPM_WHERE=/tmp/ownrt-work/missing but that file does not exist
+exit=1
+
+==================================================
+== [8] consumer: pkg= pin — the local source serves only demoy
+==================================================
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        demoy       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+
+==================================================
+== [9] consumer: unreachable source warns and falls through
+==================================================
+$ catpm add demoy
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone
+catpm: added demoy 'latest' to catpm.json (resolves to 0.1.0)
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg-gone, /tmp/ownrt-work/reg)
+catpm: package not found in any source: timex
+  searched: /tmp/ownrt-work/reg
+exit=1
+$ catpm sources
+catpm: sources from ./package.where
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone (no index.json)
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg-gone                   (all)       UNREACHABLE
+  5     dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+
+==================================================
+== [10] consumer: package in no source
+==================================================
+$ catpm add nosuchpkg
+catpm: package not found in any source: nosuchpkg
+  searched: /tmp/ownrt-work/reg
+exit=1
+
+==================================================
+== [11] consumer: installed package is gone from every source
+==================================================
+$ catpm install
+catpm: resolving dependencies (source: /tmp/ownrt-work/reg)
+catpm: package not found in any source: demoy
+  searched: /tmp/ownrt-work/reg
+exit=1
+
+==================================================
+== [12] consumer: bad lines in package.where (formatted error + exit 1)
+==================================================
+$ catpm add demoy
+catpm: package.where:1: source must start with / ./ ../ http:// or https:// — got 'no-slash-or-scheme.example/pkgs'
+exit=1
+$ catpm add demoy
+catpm: package.where:1: prio must be a non-negative integer — got 'high'
+exit=1
+
+==================================================
+== END PART A
+==================================================
+
+########## part b — /tmp/ownrt-b.(sh|log) ##########
+
+==================================================
+== [13] offline fallback: no package.where next to the binary and none in the project
+==================================================
+$ /tmp/ownrt-nofile/bin/catpm sources
+catpm: no package.where found; implicit single source (CATPM_REGISTRY or ./registry)
+catpm: warning: source unreachable: registry (no index.json)
+catpm: no reachable source (all failed; see warnings above)
+exit=1
+$ /tmp/ownrt-nofile/bin/catpm add demoy
+catpm: no catpm.json here; run 'catpm init' first
+exit=1
+
+==================================================
+== [14] legacy single-source fallback via CATPM_REGISTRY
+==================================================
+$ CATPM_REGISTRY=/tmp/ownrt-work/reg catpm add demoy
+catpm: no catpm.json here; run 'catpm init' first
+exit=1
+$ CATPM_REGISTRY=/tmp/ownrt-work/reg catpm sources
+catpm: no package.where found; implicit single source (CATPM_REGISTRY or ./registry)
+  prio kind root                                        serves       status
+  0     dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+
+==================================================
+== [15] unreachable higher-prio source still succeeds from the fallback source
+==================================================
+$ catpm add timex
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg-gone, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: package not found in any source: demoy
+  searched: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+exit=1
+
+==================================================
+== [16] compile and run a program that imports the package from the custom source
+==================================================
+$ /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catbase/bin/catcc main.cat -o app
+Compiling main.cat...
+
+CatBase compilation errors:
+  --> main.cat:1
+  |
+   > |    1 | import ./deps/demoy/index.catc as demoy
+     |    2 | import ./deps/timex/index.catc as timex
+     |    3 | 
+  |
+  failed to import cat file '/tmp/ownrt-work/proj/deps/demoy/index.catc': open /tmp/ownrt-work/proj/deps/demoy/index.catc: no such file or directory
+
+  --> main.cat:2
+  |
+     |    1 | import ./deps/demoy/index.catc as demoy
+   > |    2 | import ./deps/timex/index.catc as timex
+     |    3 | 
+     |    4 | def main() {
+  |
+  failed to import cat file '/tmp/ownrt-work/proj/deps/timex/index.catc': open /tmp/ownrt-work/proj/deps/timex/index.catc: no such file or directory
+
+exit=1
+$ ./app
+/tmp/ownrt-b.sh: line 8: ./app: No such file or directory
+exit=127
+
+==================================================
+== [17] removing a source: delete its line from package.where
+==================================================
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  5     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+$ catpm add demoy
+catpm: package not found in any source: demoy
+  searched: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+exit=1
+
+==================================================
+== [18] provider: second version of demoy, publish again, consumer upgrades
+==================================================
+$ catpm pack
+catpm: packed demoy@0.2.0 -> dist/demoy-0.2.0.cpkg
+  size: 279 bytes   sha256: dbeafdc9902148f22d7fdf8148aff60876e3b0b7f29798685a58930bd0dc3a0f
+exit=0
+$ catpm publish /tmp/ownrt-work/reg
+catpm: published demoy@0.2.0
+  -> /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  -> /tmp/ownrt-work/reg/index.json updated (sha256 dbeafdc9902148f2...)
+exit=0
+--- index.json ---
+{"packages":{"demoy":{"0.2.0":{"sha256":"dbeafdc9902148f22d7fdf8148aff60876e3b0b7f29798685a58930bd0dc3a0f","deps":{},"path":"demoy/demoy-0.2.0.cpkg"}}}}
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.2.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm outdated
+  package   current   newest
+  demoy     0.2.0     0.2.0
+  stringx   0.3.0     0.3.0
+  timex     0.1.0     0.1.0
+  (all up to date)
+exit=0
+
+==================================================
+== [19] remote independent registry repo (GitHub raw) as the only source
+==================================================
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add timex
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 2 package(s):
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm list
+installed packages in ./deps:
+  stringx  0.3.0
+  timex  0.1.0
+exit=0
+
+==================================================
+== END PART B
+==================================================
+
+########## part c — /tmp/ownrt-c.(sh|log) ##########
+
+==================================================
+== [14r] legacy single-source fallback via CATPM_REGISTRY (fresh project, init first)
+==================================================
+$ /tmp/ownrt-nofile/bin/catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ CATPM_REGISTRY=/tmp/ownrt-work/reg /tmp/ownrt-nofile/bin/catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: /tmp/ownrt-work/reg)
+catpm: resolved 1 package(s):
+  - demoy@0.2.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ CATPM_REGISTRY=/tmp/ownrt-work/reg /tmp/ownrt-nofile/bin/catpm sources
+catpm: no package.where found; implicit single source (CATPM_REGISTRY or ./registry)
+  prio kind root                                        serves       status
+  0     dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+$ CATPM_REGISTRY=/tmp/ownrt-work/reg /tmp/ownrt-nofile/bin/catpm add timex  (upstream package, not in reg)
+catpm: package not found in any source: timex
+  searched: /tmp/ownrt-work/reg
+exit=1
+
+==================================================
+== [15r] unreachable higher-prio source warns, falls through to the working one
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add timex
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: warning: source unreachable: /tmp/ownrt-work/reg-gone
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg-gone, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 2 package(s):
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [16r] compile and run a program that imports packages from both sources
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - demoy@0.2.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm add timex
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.2.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catbase/bin/catcc main.cat -o app
+Compiling main.cat...
+CAIR file generated: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/catbase/runtime/main.cair
+Invoking CatBase bin compiler...
+Compilation successful.
+exit=0
+$ ./app
+demoy:  hello from demoy v2
+timex:  [05:34:31] own-registry
+exit=0
+
+==================================================
+== [17r] switching source: demoy now also served by a second registry, first source removed
+==================================================
+$ catpm pack
+catpm: packed demoy@0.2.0 -> dist/demoy-0.2.0.cpkg
+  size: 279 bytes   sha256: b763d1ca65e602201b6577ddd66b00d02b7bf974eba6f05a747e89160da685de
+exit=0
+$ catpm pack
+catpm: packed demoy@0.1.1 -> dist/demoy-0.1.1.cpkg
+  size: 279 bytes   sha256: cad40240b8555f0964cdc017c1192e931dceda86492d44f932814cd0a434a975
+exit=0
+$ catpm publish /tmp/ownrt-work/reg2
+catpm: published demoy@0.1.1
+  -> /tmp/ownrt-work/reg2/demoy/demoy-0.1.1.cpkg
+  -> /tmp/ownrt-work/reg2/index.json updated (sha256 cad40240b8555f09...)
+exit=0
+--- reg2 entry ---
+"demoy":{"0.1.1":{"sha256":"cad40240b8555f0964cdc017c1192e931dceda86492d44f932814cd0a434a975","deps":{}
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg2                       (all)       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+$ catpm install
+catpm: installing exactly from catpm.lock (lock-exact; no re-resolution)
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+catpm: demoy@0.2.0 not found in any source
+  searched: /tmp/ownrt-work/reg2, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+exit=1
+--- installed demoy headline ---
+head: cannot open 'deps/demoy/index.catc' for reading: No such file or directory
+
+==================================================
+== [17b] both sources serve demoy 0.2.0: higher prio wins the download
+==================================================
+$ catpm add demoy@0.1.1
+catpm: added demoy '0.1.1' to catpm.json (resolves to 0.1.1)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, /tmp/ownrt-work/reg2)
+catpm: package not found in any source: timex
+  searched: /tmp/ownrt-work/reg, /tmp/ownrt-work/reg2
+exit=1
+--- installed demoy headline ---
+head: cannot open 'deps/demoy/index.catc' for reading: No such file or directory
+
+==================================================
+== END PART C
+==================================================
+
+########## part d — /tmp/ownrt-d.(sh|log) ##########
+
+==================================================
+== [20] after switching sources, lock-exact install fails on the old version; upgrade migrates
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - demoy@0.2.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm add timex
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.2.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- now the old source is dropped from package.where, a newer one takes its place ---
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg2                       (all)       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+$ catpm install
+catpm: installing exactly from catpm.lock (lock-exact; no re-resolution)
+catpm: demoy@0.2.0 not found in any source
+  searched: /tmp/ownrt-work/reg2, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+exit=1
+$ catpm upgrade
+catpm: upgrading (re-resolving catpm.json from sources)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg2, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.1.1
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch demoy@0.1.1 <- /tmp/ownrt-work/reg2/demoy/demoy-0.1.1.cpkg
+  cached .catpm-cache/demoy/demoy-0.1.1.cpkg
+  installed demoy@0.1.1 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- deps after upgrade ---
+DEMOY_VERSION: str = "0.2.0"
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+demoy 0.1.1
+timex 0.1.0
+stringx 0.3.0
+
+==================================================
+== [21] same version published in two sources: the higher-prio source is downloaded
+==================================================
+$ catpm publish /tmp/ownrt-work/reg
+catpm: published dupx@0.1.0
+  -> /tmp/ownrt-work/reg/dupx/dupx-0.1.0.cpkg
+  -> /tmp/ownrt-work/reg/index.json updated (sha256 22fda28800bd098f...)
+exit=0
+$ catpm publish /tmp/ownrt-work/reg3
+catpm: published dupx@0.1.0
+  -> /tmp/ownrt-work/reg3/dupx/dupx-0.1.0.cpkg
+  -> /tmp/ownrt-work/reg3/index.json updated (sha256 0fb1413e804ef5c9...)
+exit=0
+--- reg  index ---
+{"packages":{"dupx":{"0.1.0":{"sha256":"22fda28800bd098fae059692d4ffdd2e67e47d65ed93ffd80e37d69d361374c5","deps":{},"path":"dupx/dupx-0.1.0.cpkg"}},"demoy":{"0.2.0":{"sha256":"dbeafdc9902148f22d7fdf8148aff60876e3b0b7f29798685a58930bd0dc3a0f","deps":{},"path":"demoy/demoy-0.2.0.cpkg"}}}}
+--- reg3 index ---
+{"packages":{"dupx":{"0.1.0":{"sha256":"0fb1413e804ef5c9855753873a62325e0c2a65c81cecb3c60b95acb05e62c3a8","deps":{},"path":"dupx/dupx-0.1.0.cpkg"}}}}
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add dupx
+catpm: added dupx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, /tmp/ownrt-work/reg3)
+catpm: resolved 1 package(s):
+  - dupx@0.1.0
+catpm: installing into ./deps/
+  prefetch dupx@0.1.0 <- /tmp/ownrt-work/reg/dupx/dupx-0.1.0.cpkg
+  cached .catpm-cache/dupx/dupx-0.1.0.cpkg
+  installed dupx@0.1.0 (sha256 ok) -> deps/dupx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- installed dupx label ---
+DUPX_LABEL: str = "reg from source A"
+--- flip the priorities, reinstall ---
+$ catpm add dupx
+catpm: added dupx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg3, /tmp/ownrt-work/reg)
+catpm: resolved 1 package(s):
+  - dupx@0.1.0
+catpm: installing into ./deps/
+  prefetch dupx@0.1.0 <- /tmp/ownrt-work/reg3/dupx/dupx-0.1.0.cpkg
+  cached .catpm-cache/dupx/dupx-0.1.0.cpkg
+  installed dupx@0.1.0 (sha256 ok) -> deps/dupx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- installed dupx label ---
+DUPX_LABEL: str = "reg3 from source B"
+
+==================================================
+== END PART D
+==================================================
+
+########## part g — /tmp/ownrt-g.(sh|log) ##########
+
+==================================================
+== [31] sources takes no add/remove argument (extra words are ignored)
+==================================================
+$ catpm sources add https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+$ catpm sources remove /tmp/ownrt-work/reg
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+
+==================================================
+== [32] duplicate source lines: second is ignored with a warning
+==================================================
+$ catpm sources
+catpm: warning: package.where:2: duplicate source '/tmp/ownrt-work/reg' ignored
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        (all)       ok
+exit=0
+
+==================================================
+== [33] pkg= pin: the pinned source only serves the named package
+==================================================
+$ catpm add demoy
+catpm: no catpm.json here; run 'catpm init' first
+exit=1
+$ catpm add timex
+catpm: no catpm.json here; run 'catpm init' first
+exit=1
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        demoy       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+
+==================================================
+== [34] pin the upstream package away: timex not found when only pinned local source plus no upstream
+==================================================
+$ catpm add timex
+catpm: no catpm.json here; run 'catpm init' first
+exit=1
+
+==================================================
+== [35] explicit version pin against the custom source
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add demoy@0.2.0
+catpm: added demoy '0.2.0' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: /tmp/ownrt-work/reg)
+catpm: resolved 1 package(s):
+  - demoy@0.2.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm add demoy@0.1.1
+catpm: no version of demoy satisfies '0.1.1' (available: 0.2.0)
+exit=1
+$ catpm list
+installed packages in ./deps:
+  demoy  0.2.0
+exit=0
+
+==================================================
+== END PART G
+==================================================
+
+########## part h — /tmp/ownrt-h.(sh|log) ##########
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+
+==================================================
+== [33r] pkg= pin: the pinned source only serves the named package
+==================================================
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 1 package(s):
+  - demoy@0.2.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- /tmp/ownrt-work/reg/demoy/demoy-0.2.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm add timex
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: 2 source(s): /tmp/ownrt-work/reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - demoy@0.2.0
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg                        demoy       ok
+  1     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)       ok
+exit=0
+
+==================================================
+== [34r] with only the pinned local source left, timex is not found
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add timex
+catpm: added timex 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 2 package(s):
+  - timex@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch timex@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/timex/timex-0.1.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/timex/timex-0.1.0.cpkg
+  installed timex@0.1.0 (sha256 ok) -> deps/timex/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+END PART H
+
+########## part i — /tmp/ownrt-i.(sh|log) ##########
+
+==================================================
+== [36] trailing slash on the URL and on a local dir
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-work/reg/                       (all)       ok
+  5     url  https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/(all)       ok
+exit=0
+
+==================================================
+== [37] relative local source ./reg next to the project
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  ./reg                                      (all)       ok
+exit=0
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.2.0)
+catpm: resolving dependencies (source: ./reg)
+catpm: resolved 1 package(s):
+  - demoy@0.2.0
+catpm: installing into ./deps/
+  prefetch demoy@0.2.0 <- ./reg/demoy/demoy-0.2.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.2.0.cpkg
+  installed demoy@0.2.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [38] a URL that has no index.json
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm sources
+catpm: sources from ./package.where
+catpm: warning: source unreachable: https://raw.githubusercontent.com/monikalnbo/catpm/main/no-such-registry
+catpm: no reachable source (all failed; see warnings above)
+exit=1
+$ catpm add demoy
+catpm: warning: source unreachable: https://raw.githubusercontent.com/monikalnbo/catpm/main/no-such-registry
+catpm: no reachable source (all failed; see warnings above)
+exit=1
+END PART I
+
+########## part j — /tmp/ownrt-j.(sh|log) ##########
+
+==================================================
+== [S1] publish movx 0.1.0 into registry A and movx 0.2.0 into registry B
+==================================================
+$ catpm pack
+catpm: packed movx@0.1.0 -> dist/movx-0.1.0.cpkg
+  size: 239 bytes   sha256: 31b87708c330a4d9d8b387a86f904666ae07d11d2739793c8939226a6cc2e4e8
+exit=0
+$ catpm publish /tmp/ownrt-switch/regA
+catpm: published movx@0.1.0
+  -> /tmp/ownrt-switch/regA/movx/movx-0.1.0.cpkg
+  -> /tmp/ownrt-switch/regA/index.json updated (sha256 31b87708c330a4d9...)
+exit=0
+$ catpm pack
+catpm: packed movx@0.2.0 -> dist/movx-0.2.0.cpkg
+  size: 239 bytes   sha256: 9a9f5750a9ea6bc4b97b56d4922a6ce639f5a6b94efa464c6c5f5e194d1eb7d4
+exit=0
+$ catpm publish /tmp/ownrt-switch/regB
+catpm: published movx@0.2.0
+  -> /tmp/ownrt-switch/regB/movx/movx-0.2.0.cpkg
+  -> /tmp/ownrt-switch/regB/index.json updated (sha256 9a9f5750a9ea6bc4...)
+exit=0
+
+==================================================
+== [S2] project installs from A
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add movx
+catpm: added movx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: /tmp/ownrt-switch/regA)
+catpm: resolved 1 package(s):
+  - movx@0.1.0
+catpm: installing into ./deps/
+  prefetch movx@0.1.0 <- /tmp/ownrt-switch/regA/movx/movx-0.1.0.cpkg
+  cached .catpm-cache/movx/movx-0.1.0.cpkg
+  installed movx@0.1.0 (sha256 ok) -> deps/movx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- installed marker ---
+MOVX_FROM: str = "registry A"
+--- lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+movx 0.1.0
+
+==================================================
+== [S3] switch package.where to B, then plain install
+==================================================
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    dir  /tmp/ownrt-switch/regB                     (all)       ok
+exit=0
+$ catpm install
+catpm: installing exactly from catpm.lock (lock-exact; no re-resolution)
+catpm: movx@0.1.0 not found in any source
+  searched: /tmp/ownrt-switch/regB
+exit=1
+
+==================================================
+== [S4] upgrade re-resolves and migrates to B
+==================================================
+$ catpm upgrade
+catpm: upgrading (re-resolving catpm.json from sources)
+catpm: resolving dependencies (source: /tmp/ownrt-switch/regB)
+catpm: resolved 1 package(s):
+  - movx@0.2.0
+catpm: installing into ./deps/
+  prefetch movx@0.2.0 <- /tmp/ownrt-switch/regB/movx/movx-0.2.0.cpkg
+  cached .catpm-cache/movx/movx-0.2.0.cpkg
+  installed movx@0.2.0 (sha256 ok) -> deps/movx/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- installed marker ---
+MOVX_FROM: str = "registry B"
+--- lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+movx 0.2.0
+END PART J

@@ -1,0 +1,314 @@
+==================================================
+== SOURCES / OWN REGISTRY — provider side over GitHub raw  2026-11-11T05:41:04Z
+== catpm catpm 0.5.5 (for CatBase 0.1.8)
+== raw run logs concatenated in order; nothing edited
+==================================================
+
+########## part e — /tmp/ownrt-e.(sh|log) ##########
+
+==================================================
+== [22] create a dedicated registry repo for the demo package
+==================================================
+$ git init -b main
+Initialized empty Git repository in /tmp/ownrt-work/gh-reg/.git/
+exit=0
+$ gh repo create catpm-registry-demo --public --description catpm registry demo (temporary verification repo) --source=. --remote=origin
+https://github.com/monikalnbo/catpm-registry-demo
+exit=0
+
+==================================================
+== [23] publish from the package directory into a clone of that repo
+==================================================
+$ catpm pack
+catpm: packed demoy@0.3.0 -> dist/demoy-0.3.0.cpkg
+  size: 282 bytes   sha256: 4fdd06dd1793e993de41abee43eb326238813e114e632c8bace9227c8f312101
+exit=0
+$ catpm publish /tmp/ownrt-work/gh-reg
+catpm: published demoy@0.3.0
+  -> /tmp/ownrt-work/gh-reg/demoy/demoy-0.3.0.cpkg
+  -> /tmp/ownrt-work/gh-reg/index.json updated (sha256 4fdd06dd1793e993...)
+exit=0
+--- repo layout ---
+/tmp/ownrt-work/gh-reg/demoy/demoy-0.3.0.cpkg
+/tmp/ownrt-work/gh-reg/index.json
+--- index.json ---
+{"packages":{"demoy":{"0.3.0":{"sha256":"4fdd06dd1793e993de41abee43eb326238813e114e632c8bace9227c8f312101","deps":{},"path":"demoy/demoy-0.3.0.cpkg"}}}}
+
+==================================================
+== [24] commit and push
+==================================================
+$ git add -A
+exit=0
+$ git commit -m publish demoy 0.3.0
+[main (root-commit) f73ea3a] publish demoy 0.3.0
+ 3 files changed, 2 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 demoy/demoy-0.3.0.cpkg
+ create mode 100644 index.json
+exit=0
+$ git push -u origin main
+To https://github.com/monikalnbo/catpm-registry-demo.git
+ * [new branch]      main -> main
+branch 'main' set up to track 'origin/main'.
+exit=0
+
+==================================================
+== [25] raw reachability
+==================================================
+$ curl -s -o /dev/null -w '%{http_code}' https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/index.json
+200
+$ curl -s -o /dev/null -w '%{http_code}' https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/demoy/demoy-0.3.0.cpkg
+200
+
+==================================================
+== [26] a fresh consumer with only that repo as its source
+==================================================
+$ catpm sources
+catpm: sources from ./package.where
+  prio kind root                                        serves       status
+  10    url  https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main(all)       ok
+exit=0
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.3.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main)
+catpm: resolved 1 package(s):
+  - demoy@0.3.0
+catpm: installing into ./deps/
+  prefetch demoy@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/demoy/demoy-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.3.0.cpkg
+  installed demoy@0.3.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm list
+installed packages in ./deps:
+  demoy  0.3.0
+exit=0
+
+==================================================
+== [27] a second consumer written by someone else: plain URL in CATPM_REGISTRY
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main catpm add demoy
+catpm: note: ignoring CATPM_REGISTRY (package.where found: /root/.local/bin/package.where)
+catpm: package not found in any source: demoy
+  searched: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+exit=1
+
+==================================================
+== END PART E
+==================================================
+
+########## part f — /tmp/ownrt-f.(sh|log) ##########
+
+==================================================
+== [27r] CATPM_REGISTRY URL with a binary that has no adjacent package.where
+==================================================
+$ /tmp/ownrt-nofile/bin/catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main /tmp/ownrt-nofile/bin/catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.3.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main)
+catpm: resolved 1 package(s):
+  - demoy@0.3.0
+catpm: installing into ./deps/
+  prefetch demoy@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/demoy/demoy-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.3.0.cpkg
+  installed demoy@0.3.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ ls deps
+demoy
+exit=0
+
+==================================================
+== [27b] why the earlier attempt failed: a package.where wins over CATPM_REGISTRY
+==================================================
+$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+exit=0
+$ CATPM_REGISTRY=https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main catpm add demoy   (with ./package.where present)
+catpm: note: ignoring CATPM_REGISTRY (package.where found: ./package.where)
+catpm: added demoy 'latest' to catpm.json (resolves to 0.3.0)
+catpm: note: ignoring CATPM_REGISTRY (package.where found: ./package.where)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main)
+catpm: resolved 1 package(s):
+  - demoy@0.3.0
+catpm: installing into ./deps/
+  prefetch demoy@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/demoy/demoy-0.3.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.3.0.cpkg
+  installed demoy@0.3.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+==================================================
+== [28] .gitignore containing *.cpkg silently keeps the archive out of git
+==================================================
+$ catpm pack
+catpm: packed demoz@0.1.0 -> dist/demoz-0.1.0.cpkg
+  size: 241 bytes   sha256: 3bfb577ab2e609a5be9e0b303e715b75120a45d741d78ae840efdb7094b8887c
+exit=0
+$ catpm publish /tmp/ownrt-work/gh-reg
+catpm: published demoz@0.1.0
+  -> /tmp/ownrt-work/gh-reg/demoz/demoz-0.1.0.cpkg
+  -> /tmp/ownrt-work/gh-reg/index.json updated (sha256 3bfb577ab2e609a5...)
+exit=0
+$ git status --short
+ M .gitignore
+ M index.json
+exit=0
+$ git add -A
+exit=0
+$ git status --short
+M  .gitignore
+M  index.json
+exit=0
+--- index.json references demoz but git will not carry it ---
+"demoz":{"0.1.0":{"sha256":"3bfb577ab2e609a5be9e0b303e715b75120a45d741d78ae840efdb7094b8887c","deps":{}
+--- restore the working .gitignore ---
+$ git add -A
+exit=0
+$ git commit -m publish demoz 0.1.0
+[main 33b4897] publish demoz 0.1.0
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+ create mode 100644 demoz/demoz-0.1.0.cpkg
+exit=0
+$ git push
+To https://github.com/monikalnbo/catpm-registry-demo.git
+   f73ea3a..33b4897  main -> main
+exit=0
+
+==================================================
+== [29] private repository raw URL is not readable anonymously
+==================================================
+$ curl -s -o /dev/null -w '%{http_code}' https://raw.githubusercontent.com/monikalnbo/vault-site/main/README.md
+404
+
+==================================================
+== [30] after a new version is published upstream, catpm update refreshes the index
+==================================================
+$ catpm add demoy
+catpm: added demoy 'latest' to catpm.json (resolves to 0.3.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main)
+catpm: resolved 1 package(s):
+  - demoy@0.3.0
+catpm: installing into ./deps/
+  cached .catpm-cache/demoy/demoy-0.3.0.cpkg
+  installed demoy@0.3.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+--- a newer demoy appears in the registry ---
+$ catpm pack
+catpm: packed demoy@0.4.0 -> dist/demoy-0.4.0.cpkg
+  size: 284 bytes   sha256: 687b691b91e2544c59f0d5102f3521797aeba7899c6228793b376ab363abf820
+exit=0
+$ catpm publish /tmp/ownrt-work/gh-reg
+catpm: published demoy@0.4.0
+  -> /tmp/ownrt-work/gh-reg/demoy/demoy-0.4.0.cpkg
+  -> /tmp/ownrt-work/gh-reg/index.json updated (sha256 687b691b91e2544c...)
+exit=0
+$ git add -A
+exit=0
+$ git commit -m publish demoy 0.4.0
+[main 9b0662e] publish demoy 0.4.0
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+ create mode 100644 demoy/demoy-0.4.0.cpkg
+exit=0
+$ git push
+To https://github.com/monikalnbo/catpm-registry-demo.git
+   33b4897..9b0662e  main -> main
+exit=0
+$ catpm outdated
+  package   current   newest
+  demoy     0.3.0     0.3.0
+  (all up to date)
+exit=0
+$ catpm update
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main  1 entries (no change)
+catpm: index cache updated: 1 ok, 0 failed, 1 entries total (age out after 0s; override with CATPM_INDEX_TTL)
+exit=0
+$ catpm upgrade
+catpm: upgrading (re-resolving catpm.json from sources)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main)
+catpm: resolved 1 package(s):
+  - demoy@0.3.0
+catpm: installing into ./deps/
+  cached .catpm-cache/demoy/demoy-0.3.0.cpkg
+  installed demoy@0.3.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm list
+installed packages in ./deps:
+  demoy  0.3.0
+exit=0
+
+==================================================
+== END PART F
+==================================================
+
+########## part k — /tmp/ownrt-k.(sh|log) ##########
+
+==================================================
+== [30r] once raw serves the new index: update + upgrade pull 0.4.0
+==================================================
+$ catpm outdated
+  package   current   newest
+  demoy     0.3.0     0.4.0  -> upgradable
+exit=0
+$ catpm update
+catpm: refreshing package index from 1 source(s)
+  OK   https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main  3 entries (no change)
+catpm: index cache updated: 1 ok, 0 failed, 3 entries total (age out after 0s; override with CATPM_INDEX_TTL)
+exit=0
+$ catpm upgrade
+catpm: upgrading (re-resolving catpm.json from sources)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main)
+catpm: resolved 1 package(s):
+  - demoy@0.4.0
+catpm: installing into ./deps/
+  prefetch demoy@0.4.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/demoy/demoy-0.4.0.cpkg
+  cached .catpm-cache/demoy/demoy-0.4.0.cpkg
+  installed demoy@0.4.0 (sha256 ok) -> deps/demoy/index.catc
+catpm: wrote catpm.lock
+exit=0
+$ catpm list
+installed packages in ./deps:
+  demoy  0.4.0
+exit=0
+--- installed source line ---
+DEMOY_VERSION: str = "0.3.0"
+
+==================================================
+== [30b] propagation timing, measured
+==================================================
+push commit 9b0662e at 05:35:29Z; raw index first served 0.4.0 at 05:40:19Z (see /tmp/raw-poll.log): about 5 minutes
+$ curl -s https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main/index.json
+{"packages":{"demoz":{"0.1.0":{"sha256":"3bfb577ab2e609a5be9e0b303e715b75120a45d741d78ae840efdb7094b8887c","deps":{},"path":"demoz/demoz-0.1.0.cpkg"}},"demoy":{"0.4.0":{"sha256":"687b691b91e2544c59f0d5102f3521797aeba7899c6228793b376ab363abf820","deps":{},"path":"demoy/demoy-0.4.0.cpkg"},"0.3.0":{"sha256":"4fdd06dd1793e993de41abee43eb326238813e114e632c8bace9227c8f312101","deps":{},"path":"demoy/demoy-0.3.0.cpkg"}}}}
+exit=0
+END PART K
+
+########## raw CDN propagation poll — /tmp/raw-poll.log ##########
+05:38:18Z poll 1 raw still stale
+05:38:48Z poll 2 raw still stale
+05:39:18Z poll 3 raw still stale
+05:39:48Z poll 4 raw still stale
+05:40:18Z poll 5 RAW NOW HAS 0.4.0
+{"packages":{"demoz":{"0.1.0":{"sha256":"3bfb577ab2e609a5be9e0b303e715b75120a45d741d78ae840efdb7094b8887c","deps":{},"path":"demoz/demoz-0.1.0.cpkg"}},"demoy":{"0.4.0":{"sha256":"687b691b91e2544c59f0d5102f3521797aeba7899c6228793b376ab363abf820","deps":{},"path":"demoy/demoy-0.4.0.cpkg"},"0.3.0":{"sha256":"4fdd06dd1793e993de41abee43eb326238813e114e632c8bace9227c8f312101","deps":{},"path":"demoy/demoy-0.3.0.cpkg"}}}}
+ts=2026-11-11T05:40:19Z final-check
+{"packages":{"demoz":{"0.1.0":{"sha256":"3bfb577ab2e609a5be9e0b303e715b75120a45d741d78ae840efdb7094b8887c","deps":{},"path":"demoz/demoz-0.1.0.cpkg"}},"demoy":{"0.4.0":{"sha256":"687b691b91e2544c59f0d5102f3521797aeba7899c6228793b376ab363abf820","deps":{},"path":"demoy/demoy-0.4.0.cpkg"},"0.3.0":{"sha256":"4fdd06dd1793e993de41abee43eb326238813e114e632c8bace9227c8f312101","deps":{},"path":"demoy/demoy-0.3.0.cpkg"}}}}
+
+
+########## commit timestamps ##########
+9b0662e 2026-11-11T05:35:29Z publish demoy 0.4.0
+33b4897 2026-11-11T05:35:26Z publish demoz 0.1.0
+f73ea3a 2026-11-11T05:35:08Z publish demoy 0.3.0

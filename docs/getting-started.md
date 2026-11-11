@@ -82,18 +82,36 @@ def main() {
 
 基础闭环走完了。如果你还想更进一步——不管是想用别人的源，还是想把自己的包仓库挂起来给别人用——都在这一节。
 
-**使用方：添加与切换第三方源。** `catpm sources` 是查看命令：它列出每个源的优先级、类型、服务范围和实测可达性，但添加源不靠它，靠改 `package.where` 文件。这个文件有三处可写，catpm 按顺序找：用 `CATPM_WHERE=<路径>` 指定的那份 → 项目目录里的 `./package.where` → 二进制旁边的 `~/.local/bin/package.where`（装好后默认就在这里，默认源就是 catpm-registry 的 GitHub raw 地址），都没有时才回退老的 `CATPM_REGISTRY=<dir|URL>` 单源写法。实测：项目里放一份 `./package.where`，`catpm sources` 立刻回 `catpm: sources from ./package.where`；改用 `CATPM_WHERE=/tmp/where-alt`，它回 `catpm: sources from /tmp/where-alt`——两处都会盖过默认清单。
+先把两件事分清楚：`catpm sources` 只负责**看**——列出每个源的优先级、类型、服务范围和当场探测的可达性，后面的词一概忽略（`catpm sources add <地址>` 还是只列，什么都不改）；要**加源、换源、删源**，改的是 `package.where` 这个文本文件。
 
-源清单一行一个源，`prio=` 定优先级，比如把自己的源排在官方源前面：
+**使用方：源写在哪。** 三处，catpm 按顺序只认第一份：`CATPM_WHERE=<路径>` 指定的那份 → 项目里的 `./package.where` → 二进制旁边的 `~/.local/bin/package.where`。安装器已经把最后一份放好了，内容只有一行上游地址，所以刚装完 `catpm sources` 回的是 `catpm: sources from /root/.local/bin/package.where`，表里一行：`0  url  https://raw.githubusercontent.com/monikalnbo/catpm-registry/main(all)  ok`。想加自己的源，就在前两处任选一处写一份新清单，一行一个源，`prio=` 越大越优先：
 
 ```text
-/my/registry-dir                                        prio=10
-https://raw.githubusercontent.com/<user>/<repo>/main   prio=1
+/tmp/my-reg                                            prio=10
+https://raw.githubusercontent.com/monikalnbo/catpm-registry/main   prio=1
 ```
 
-添加之后就照常 add／install，解析自动变成多源并集、下载按 prio 从高到低试。实测回显长这样：`resolving dependencies (source: 2 source(s): /tmp/my-reg, https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)`；`catpm add demox` 的下载行来自新源（`prefetch demox@0.1.0 <- /tmp/my-reg/demox/demox-0.1.0.cpkg`），同一项目里 `catpm add timex` 又自动落到 GitHub 源——一个项目混用两个源，互不干扰。某一路源挂了也不致命：`catpm sources` 会标 `UNREACHABLE`、命令打个 warning 继续用其余源；要找的包哪都没有时，回 `package not found in any source: <包名>` 并附 `searched:` 列出它实际查过的源。还可以给某个源加 `pkg=demox` 钉定——它就只参与这几个包的解析（`sources` 的 serves 列会如实显示），跟 apt 的 pin 一个思路。
+写好后 `catpm sources` 头一行变成 `catpm: sources from ./package.where`（走环境变量那份则回 `catpm: sources from /tmp/where-alt`），表里两行 `10  dir  /tmp/my-reg  (all)  ok` 与 `1  url  https://…  (all)  ok`。目录源可以写绝对路径、项目内的相对路径 `./reg`，结尾带不带斜杠都认。
 
-**提供方：把自己的仓库挂起来。** 一个 registry 就是一个目录：一份 `index.json` 加 `<包名>/<包名>-<版本>.cpkg` 归档，仅此而已。本地目录直接就能当源；要挂到网上，GitHub 仓库天然满足——raw 地址就是源地址（官方的 catpm-registry 本身就是这么跑的）。发布三步：在包目录里 `catpm pack`；`catpm publish <registry 目录>`；git 提交推送。实测回显：`catpm: published demox@0.1.0`，跟着两行 `-> /tmp/my-reg/demox/demox-0.1.0.cpkg` 和 `-> index.json updated (sha256 ...)`——索引是 publish 自动维护的，不用手写。一个实测出来的细节：publish 不会替你建目录，先 `mkdir` 再 publish，漏了会回你一句 `registry directory not found`。两个老坑再提一遍：仓库的 `.gitignore` 不能含 `*.cpkg`（否则归档上不了库、索引却更新了）；raw 传播有一点延迟，推完稍等片刻。都做完之后，别人只需把你的 raw 地址写进他的 `package.where`（就是上面那个两行的例子反过来用），一句 `catpm add <你的包>` 就能装到。
+**使用方：添加之后 add／install 怎么走。** 不用加任何参数：解析是多源并集，下载按 prio 从高到低。实测 `catpm add demoy` 回 `resolving dependencies (source: 2 source(s): /tmp/my-reg, https://…)`，装包行是 `prefetch demoy@0.2.0 <- /tmp/my-reg/demoy/demoy-0.2.0.cpkg`；同一项目再 `catpm add timex`，timex 不在你的源里，自动落到上游（`prefetch timex@0.1.0 <- https://…/timex/timex-0.1.0.cpkg`），两个包同装、各自 `sha256 ok`，锁里三行齐全。把 `deps/`、`.catpm-cache/`、`catpm.lock` 全部删掉再 `catpm install`，仍按锁从各自源拉回。
+
+**使用方：换源、删源与钉版本。** 换源就是把旧那行删掉、写上新源；删源就是删掉那一行。`install` 认锁，锁里的版本新源没有就回 `demoy@0.2.0 not found in any source` 并附 `searched:` 行，`catpm upgrade` 才重新解析——实测换源后从 `0.1.0` 升到 `0.2.0`（`installed demoy@0.2.0 (sha256 ok)`），锁同步改写。只想让某个源参与特定包的解析，就在那行加 `pkg=demoy`，`sources` 的 serves 列随之显示 `demoy`，其余包跳过它；`catpm add demoy@0.1.1` 这类精确版本只在候选里有它时成功，没有就回 `no version of demoy satisfies '0.1.1' (available: 0.2.0)`。
+
+**使用方：会遇到的回显。** 目录源缺 `index.json`、URL 打不开，`sources` 标 `UNREACHABLE` 并打 `warning: source unreachable: …`，命令继续用其余源；全部不可达则回 `no reachable source (all failed; see warnings above)`、exit 1。包在哪个源都没有，回 `package not found in any source: timex` 加一行 `searched:` 列出实际查过的源。行写错了带行号当场拒绝：`package.where:1: source must start with / ./ ../ http:// or https:// — got '…'`、`package.where:1: prio must be a non-negative integer — got 'high'`；同一个源写两行，第二行回 `duplicate source '…' ignored`。三处都没有文件时退回老的 `CATPM_REGISTRY=<dir|URL>` 单源，`catpm sources` 先说明 `no package.where found; implicit single source (CATPM_REGISTRY or ./registry)`；但只要任何一处 `package.where` 在，这个变量就不生效，只回一句 `note: ignoring CATPM_REGISTRY (package.where found: ./package.where)`。
+
+**提供方：把自己的仓库挂起来。** 一个源就是一个目录：一份 `index.json` 加 `<包名>/<包名>-<版本>.cpkg` 归档，没有服务端。三步：
+
+```bash
+cd mypkg && catpm pack                      # dist/mypkg-0.1.0.cpkg（打印 size 与 sha256）
+catpm publish /path/to/my-registry          # 归档复制进去，index.json 自动更新
+cd /path/to/my-registry && git add -A && git commit -m publish && git push
+```
+
+实测回显三行：`catpm: published demoy@0.3.0`、`-> /tmp/ownrt-work/gh-reg/demoy/demoy-0.3.0.cpkg`、`-> /tmp/ownrt-work/gh-reg/index.json updated (sha256 4fdd06dd…)`；目录里立刻是 `index.json` 与 `demoy/demoy-0.3.0.cpkg` 两个文件，索引不用手写。publish 不替你建目录，路径不存在回 `registry directory not found: …`、exit 1，先把目录建好（`mkdir` 或 `git init`）再发。本地目录本身就能当源，推不推都能给自己用。
+
+**提供方：挂到 GitHub 让别人添加。** 新建一个空仓库当 registry，把上面这个目录推到 main，raw 前缀 `https://raw.githubusercontent.com/<user>/<repo>/main` 就是别人要填的源地址（官方的 catpm-registry 本身就这么跑）。实测从零建仓库、publish、push 之后，该前缀下的 `index.json` 与 `demoy/demoy-0.3.0.cpkg` 都回 200；一个全新项目只写这一行 `package.where`，`catpm sources` 回 `10  url  https://raw.githubusercontent.com/monikalnbo/catpm-registry-demo/main(all)  ok`，`catpm add demoy` 拉回 `0.3.0`、`sha256 ok`。仓库必须公开：私有仓库的 raw 地址匿名 `curl` 只拿到 404。`.gitignore` 里绝不能有 `*.cpkg`——实测这样 `git add -A` 之后 `git status` 只剩 `.gitignore` 与 `index.json`，归档没进库而索引已经指向它，别人一装就是 404。
+
+**提供方：推完别急着验证。** 实测连推三次、raw 上的 `index.json` 仍是上一版，响应头 `cache-control: max-age=300`，同一份索引换个域名前缀读已经是新的；第一次探测到新版是在 push 之后约 5 分钟。这期间 `catpm update` 如实回 `1 entries (no change)`，`outdated` 也看不到新版；等 raw 一致了，`catpm update` 回 `3 entries`，`catpm upgrade` 才把 `0.3.0` 换成 `0.4.0`。发布和验证之间留几分钟，别把这段时间差当成 catpm 的 bug。
 
 ## 附：证据出处清单
 
@@ -101,12 +119,13 @@ https://raw.githubusercontent.com/<user>/<repo>/main   prio=1
 - 传递依赖拒绝删除、install 认锁的锁语义：`logs/run4.log` [2/6][3/6]。
 - self-update 钉版本语法与三种失败回退：`logs/selfupdate5.log` [1/5]–[5/5]。
 - 中断恢复（被杀重跑即续）：`logs/run11-local.log`（方法与场景详见 [guide.md](guide.md) 进阶篇）。
-- 添加／切换第三方源与自建 registry：`logs/own-registry.log`（提供方 pack＋publish、使用方 ./package.where 与 CATPM_WHERE、双源 prio、pkg= 钉定、不可达与 not found 回显，对 v0.5.5 现场实测）；多源原始六场景另见 `logs/where3.log`；GitHub 当源的三步流程见 `scripts/publish-remote.md` 与 [registry.md](registry.md)。
+- 添加／切换／删除第三方源（使用方）：`logs/own-registry-consumer.log`（对 v0.5.5 逐条实测：`sources` 不带增删参数、三处 `package.where` 与默认源、加源后 add／install、`CATPM_WHERE` 与 `CATPM_REGISTRY`、prio 顺序、`pkg=` 钉定、换源后 install 失败与 upgrade 迁移、相对路径与结尾斜杠、不可达／无 `index.json`／格式错误／重复行的回显）；早期现场记录另见 `logs/own-registry.log`，多源原始六场景见 `logs/where3.log`。
+- 自建 registry 并挂到 GitHub（提供方）：`logs/own-registry-provider.log`（pack、publish 与缺目录报错、git init＋建库＋push、raw 200 实核、全新项目只认该源并装包、`*.cpkg` 被 `.gitignore` 吞掉、私有仓库 raw 404、raw 缓存约 5 分钟的轮询记录与版本号）；GitHub 当源的三步流程另见 `scripts/publish-remote.md` 与 [registry.md](registry.md)。
 - 安装脚本行为与四 shell 实装：`install.sh`、`install.fish`、`logs/run4.log` [5/6]。
 - 权威命令清单与说明符表：[README.md](../README.md) §3；四层协议：[PROTOCOL.md](../PROTOCOL.md)。
 
 ## 附：自查
 
 1. 四件事齐全：一（能干什么）→ 二（怎么安装）→ 三（装完每一步怎么做，八步到第一个程序跑起来）→ 四（收尾认知）；另补进阶节五（挂上自己的包仓库，使用方与提供方两视角）。
-2. 命令与输出可溯源：正文回显逐字取自 `logs/getting-started.log` 与上述日志；未实测的写法（登录会话持久 PATH、降级到旧版本）均如实注明。
-3. 仅保留三条短代码块（单行安装命令、实测验证程序原文、双源源清单示例），其余为行内代码；正文不罗列统计数字；中文标点全角（命令与代码除外）。
+2. 命令与输出可溯源：正文回显逐字取自 `logs/getting-started.log` 与上述日志；未实测的写法（登录会话持久 PATH、降级到旧版本）均如实注明。第五节的两份日志按机器原样拼接，脚本只有命令与 `echo`，结果未做任何编辑。
+3. 仅保留四段短代码：单行安装命令、实测验证程序原文、双源源清单示例、提供方三步命令；其余为行内代码；中文标点全角（命令与代码除外）。

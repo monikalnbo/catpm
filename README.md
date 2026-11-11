@@ -114,7 +114,11 @@ catpm sources                     # 列出源清单（prio/类型/钉定/可达�
 
 包从哪里拉，由这个**用户可改写的文本文件**决定，改源不需要改任何代码。查找顺序：`CATPM_WHERE` → `./package.where` → **catpm 二进制所在目录**（即与 PM 同仓库，默认形态）→ 回退 `CATPM_REGISTRY`/`./registry`。
 
-> **想挂自己的包仓库（添加第三方源／自建 registry 给别人用）**：两个视角的逐步实测回显见 **[docs/getting-started.md](docs/getting-started.md) §五**（依据 `logs/own-registry.log`）。
+> **想挂自己的包仓库（添加第三方源／自建 registry 给别人用）**：两个视角的逐步实测回显见 **[docs/getting-started.md](docs/getting-started.md) §五**（依据 `logs/own-registry-consumer.log` 与 `logs/own-registry-provider.log`）。
+>
+> **加源／换源／删源都改 `package.where` 文件本身**：`catpm sources` 只查看当前清单与实测可达性，不接收增删参数。三处文件按 `CATPM_WHERE` → `./package.where` → 二进制旁边那份的顺序只认第一份；安装器放好的默认清单只有一行上游 raw 地址。一行一源、`prio=` 越大越先试、`pkg=` 只让该源参与指定包，删除源就是删掉那一行。
+>
+> **自建源给别人用**：registry 就是一个目录，`index.json` 加 `<name>/<name>-<ver>.cpkg`；`catpm pack` → `catpm publish <目录>` → 推到一个公开 GitHub 仓库，`https://raw.githubusercontent.com/<user>/<repo>/main` 就是别人要填的源地址（私有仓库 raw 匿名拿不到；`.gitignore` 不能含 `*.cpkg`；推送后 raw 缓存约 5 分钟才换新）。
 
 ```
 # catpm source list v1（apt sources.list 式；# 注释、空行忽略）
