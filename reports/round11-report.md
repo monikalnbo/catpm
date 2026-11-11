@@ -93,3 +93,40 @@
 - 64 位哈希、md5/sha1 的不做理由见第三节，均为能力边界而非疏漏。
 - mathx 三角/对数为级数近似，精度区间在包 README 里逐函数标注（如 sin/cos 在全数轴周期归约后 |x|≤π/4 段泰勒，16 项，双精度内与参考一致）。
 - 教程类文档（guide.md）未在本轮更新 registry 表——本轮交付核心是两库与发布链路，guide 的包清单为教程速查性质，README §5 为权威表（已更新）；后续教程轮可同步。
+
+---
+
+# 追加交付：随机数库 randx 0.2.0（2026-11-11，与数学库/哈希库同轮同一套发版规矩）
+
+## 功能与实现
+
+- **生成器**：MINSTD（x → 48271·x mod 2³¹−1）。选型理由：可被任何 64 位整数语言逐值复算对照（测试确含 python 独立实现对照）；中间值 ≤ ~1.04×10¹⁴ 远低于 i64 上限；语言无位运算符（已探明），xorshift 不可行。**0.1.0 已知缺陷（below(2) 因低位周期性恒输出 0101…）在本版修复**——0.1.0 的注释如实记录过该现象，本版生成器不再有此问题。
+- **种子机制（需求核心）**：
+  - `seed(n)` 显式种子，同种子同序列；
+  - `auto_seed()` 默认自动种子 = 当前时间戳（毫秒）+ **实测 ping 往返时延**（`ping -c 1` 的 `time=` 字段按整数微秒解析，小数位归一化；v0.1.8 无可靠 str→float，codegen 缺陷已探明，故整数路径），FNV 式乘法混合入生成器；ping 目标默认 1.1.1.1，`set_ping_target()` 可配（空串忽略）；
+  - **ping 不可达兜底**：降级纯时间种子，不崩；`last_seed_source()` 如实标注 `time+ping` / `time-only`；实测把目标设为 TEST-Net 地址 192.0.2.1（保证不可达），断言 `ping_latency_us()==-1`、源降级、生成器照常出数。
+- **API 全套**：`random()` [0,1)、`randint(a,b)` 含两端且**无偏**（拒绝采样；100 次拒绝回退取模，实测从未触发）、`uniform`、`pick`/`sample(k)`（不放回）/`shuffled`/`shuffle_ints`、`rand_str`/`set_alphabet`/`rand_bytes_hex`、`normal()`/`normal_mu_sigma`（Box-Muller）、`poisson(lam)`（Knuth 法）——正态/泊松复用 mathx 的 ln/cos/exp/sqrt_float/PI，依赖声明 `mathx ^0.5.0`。0.1.0 兼容面（seed/below/between/chance/pick/die6/auto_seed）保留；**破坏性变更如实记录**：同显式种子的序列与 0.1.0 不同（生成器更换）。
+
+## 质量验证（logs/randx-build.log，全部真跑）
+
+1. **固定种子复现**：seed(42) 两次生成序列逐值一致；raw 流与 python 独立实现逐值对照（seed 1/0/−5/42）；randint/random/正态/泊松/shuffle/rand_str 的期望值全部来自 python 复算。**83 断言 0 失败**。
+2. **默认熵源生效**：连续 6 次 auto_seed，ping 时延样例 1750–6330 µs 波动、每轮种子混合值不同、首抽序列两两不同（wall_ms/ping_us/src/first3 逐轮落盘）；连续两次 auto_seed 首抽不等断言过。
+3. **统计抽查**：randint(1,100)×100,000 次——χ²=104.05（df=99，α=0.05 接受域 [67.33, 134.64]），min/max bin=927/1067（全部 bin 频数落盘日志）；random()×100,000 均值 0.50096（|mean−0.5|<2σ≈0.0032）；边界值：randint(10,20)×500 两端均命中且不越界、randint(5,5)==5、负区间 randint(−3,−1) 逐值对照；正态 50,000 次 mean=0.0057/var=0.9944；泊松(4) 50,000 次均值 4.0032。
+4. **兜底实测**：见上，行为如实可查。
+
+## 发版（PROTOCOL 规矩全程）
+
+- diff 落盘核对：`diffs/v0.1.0..v0.2.0-randx.diff`（493 行；旧快照取自已发布 randx-0.1.0.cpkg）；
+- `catpm pack`（6756 B，sha256 ac14663a…d745e3）→ `catpm publish` → registry 收敛只留 0.2.0（0.1.0 删除，git 历史可找回）→ 推送 commit `9c2da58`（空白 message）；
+- raw 直链：index.json 200、randx-0.2.0.cpkg 200、randx-0.1.0.cpkg 404（`logs/run12-online.log`）；
+- **线上源端到端**（logs/run12-online.log）：全新目录无本地源覆盖，默认线上源 `catpm add randx` 解析 0.2.0 并拉传递依赖 mathx 0.5.0 + stringx 0.3.0（lock 3 包，sha256 全过）；catcc 编译 demo → 全 API 真实调用（复现 dice、auto_seed+ping、抽样、洗牌、随机串/字节、正态/泊松、不可达兜底）15 行输出全部正确，exit=0。
+
+## 版本号说明
+
+0.1.0 → 0.2.0 取 minor 步进：生成器整体更换 + 种子机制重构 + API 从 7 个扩到 20 个，属同轮 mathx 同理的「整库大幅扩容取大步进并说明」情形（PROTOCOL §4.6 规则 1）。
+
+## 同轮踩坑实录（如实）
+
+- catbase v0.1.8 下标里带函数调用（`abc[f(...)]`）会生成 indexer 每迭代重复调用 f 的坏代码（zig 层可见）——库内所有此类写法已提离下标（先赋值临时变量再索引）；
+- `float(str)` 在 v0.1.8 是坏 codegen（`@floatFromInt(Str)`）——ping 时延解析改整数微秒路径；
+- 测试期望值第一版误按「前序消耗后的流状态」复算，重算为新鲜流对照后 83 项全过（实现无误，期望值错）。

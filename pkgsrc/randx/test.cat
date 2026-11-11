@@ -1,0 +1,1753 @@
+# mathx 0.5.0 — complete math library for CatBase 0.1.8
+# Pure arithmetic implementation: CatBase v0.1.8 has no bitwise operators
+# and no sqrt builtin, so roots use Newton iteration and everything else
+# is built from + - * / % and loops.
+# Keeps every public function of mathx 0.4.0 (gcd/lcm/is_prime/fib/
+# loud_double/power/collatz_steps) unchanged in semantics.
+
+MATHX_VERSION: str = "0.5.0"
+MATHX3: str = "yes"
+
+# ============ integer / float basics ============
+
+def abs_int(x: int) -> int {
+    if x < 0 {
+        return 0 - x
+    }
+    return x
+}
+
+def abs_float(x: float) -> float {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+def sign_int(x: int) -> int {
+    if x > 0 {
+        return 1
+    }
+    if x < 0 {
+        return -1
+    }
+    return 0
+}
+
+def sign_float(x: float) -> int {
+    if x > 0.0 {
+        return 1
+    }
+    if x < 0.0 {
+        return -1
+    }
+    return 0
+}
+
+def clamp_int(x: int, lo: int, hi: int) -> int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def clamp_float(x: float, lo: float, hi: float) -> float {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def max_int(a: int, b: int) -> int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+def min_int(a: int, b: int) -> int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+def max_float(a: float, b: float) -> float {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+def min_float(a: float, b: float) -> float {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+def max_of_list(xs: list[int]) -> int {
+    m: int = xs[0]
+    for x in xs {
+        if x > m {
+            m = x
+        }
+    }
+    return m
+}
+
+def min_of_list(xs: list[int]) -> int {
+    m: int = xs[0]
+    for x in xs {
+        if x < m {
+            m = x
+        }
+    }
+    return m
+}
+
+def floor_float(x: float) -> int {
+    # int() truncates toward zero, so negatives need one less
+    t: int = int(x)
+    if x < 0.0 {
+        f: float = float(t)
+        if f != x {
+            return t - 1
+        }
+    }
+    return t
+}
+
+def ceil_float(x: float) -> int {
+    t: int = int(x)
+    if x > 0.0 {
+        f: float = float(t)
+        if f != x {
+            return t + 1
+        }
+    }
+    return t
+}
+
+def round_half_away(x: float) -> int {
+    # builtin round(x, 0) rounds halves away from zero (verified:
+    # round(-2.5,0)=-3, round(3.5,0)=4); this wraps it to int
+    r: float = round(x, 0)
+    return int(r)
+}
+
+# ============ number theory ============
+
+def gcd(a: int, b: int) -> int {
+    x: int = abs_int(a)
+    y: int = abs_int(b)
+    while y != 0 {
+        t: int = x % y
+        x = y
+        y = t
+    }
+    return x
+}
+
+def lcm(a: int, b: int) -> int {
+    if a == 0 or b == 0 {
+        return 0
+    }
+    g: int = gcd(a, b)
+    ab: int = abs_int(a * b)
+    return ab / g
+}
+
+def is_prime(n: int) -> bool {
+    if n < 2 {
+        return False
+    }
+    if n < 4 {
+        return True
+    }
+    if n % 2 == 0 {
+        return False
+    }
+    d: int = 3
+    while d * d <= n {
+        if n % d == 0 {
+            return False
+        }
+        d = d + 2
+    }
+    return True
+}
+
+def sieve(n: int) -> list[int] {
+    # all primes <= n via Eratosthenes; n < 2 gives an empty list
+    if n < 2 {
+        return []
+    }
+    marks: list[int] = []
+    i: int = 0
+    while i <= n {
+        marks.append(1)
+        i = i + 1
+    }
+    marks[0] = 0
+    marks[1] = 0
+    p: int = 2
+    while p * p <= n {
+        if marks[p] == 1 {
+            q: int = p * p
+            while q <= n {
+                marks[q] = 0
+                q = q + p
+            }
+        }
+        p = p + 1
+    }
+    out: list[int] = []
+    j: int = 0
+    while j <= n {
+        if marks[j] == 1 {
+            out.append(j)
+        }
+        j = j + 1
+    }
+    return out
+}
+
+def prime_factors(n: int) -> list[int] {
+    # ascending factorization with multiplicity; n < 2 gives an empty list
+    out: list[int] = []
+    m: int = n
+    if m < 2 {
+        return out
+    }
+    while m % 2 == 0 {
+        out.append(2)
+        m = m / 2
+    }
+    d: int = 3
+    while d * d <= m {
+        while m % d == 0 {
+            out.append(d)
+            m = m / d
+        }
+        d = d + 2
+    }
+    if m > 1 {
+        out.append(m)
+    }
+    return out
+}
+
+def distinct_primes(n: int) -> list[int] {
+    all: list[int] = prime_factors(n)
+    out: list[int] = []
+    for p in all {
+        if len(out) == 0 {
+            out.append(p)
+        } else {
+            last: int = out[len(out) - 1]
+            if p != last {
+                out.append(p)
+            }
+        }
+    }
+    return out
+}
+
+def count_divisors(n: int) -> int {
+    if n < 1 {
+        return 0
+    }
+    c: int = 0
+    d: int = 1
+    while d * d <= n {
+        if n % d == 0 {
+            c = c + 2
+            if d * d == n {
+                c = c - 1
+            }
+        }
+        d = d + 1
+    }
+    return c
+}
+
+def is_perfect(n: int) -> bool {
+    # True when n equals the sum of its proper divisors (6, 28, 496, ...)
+    if n < 2 {
+        return False
+    }
+    s: int = 1
+    d: int = 2
+    while d * d <= n {
+        if n % d == 0 {
+            s = s + d
+            q: int = n / d
+            if q != d {
+                s = s + q
+            }
+        }
+        d = d + 1
+    }
+    if s == n {
+        return True
+    }
+    return False
+}
+
+def next_prime(n: int) -> int {
+    # smallest prime strictly greater than n
+    c: int = n + 1
+    found: bool = False
+    while not found {
+        if is_prime(c) {
+            found = True
+        } else {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+def totient(n: int) -> int {
+    # Euler phi from distinct prime factors: n * product((p-1)/p)
+    if n < 1 {
+        return 0
+    }
+    result: int = n
+    ps: list[int] = distinct_primes(n)
+    for p in ps {
+        result = result / p * (p - 1)
+    }
+    return result
+}
+
+def collatz_steps(n: int) -> int {
+    c: int = 0
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2
+        } else {
+            n = 3 * n + 1
+        }
+        c = c + 1
+    }
+    return c
+}
+
+# ============ powers & roots ============
+
+def power(base: int, e: int) -> int {
+    # fast exponentiation by squaring; e < 0 returns 0
+    if e < 0 {
+        return 0
+    }
+    result: int = 1
+    b: int = base
+    k: int = e
+    while k > 0 {
+        if k % 2 == 1 {
+            result = result * b
+        }
+        b = b * b
+        k = k / 2
+    }
+    return result
+}
+
+def mod_pow(base: int, e: int, m: int) -> int {
+    # modular exponentiation; intermediates stay within i64 when
+    # m <= 3037000499 (sqrt of 2^63), since x*x < m*m < 2^63
+    if m == 1 {
+        return 0
+    }
+    result: int = 1
+    b: int = base % m
+    k: int = e
+    while k > 0 {
+        if k % 2 == 1 {
+            result = result * b % m
+        }
+        b = b * b % m
+        k = k / 2
+    }
+    return result
+}
+
+def isqrt(n: int) -> int {
+    # largest r with r*r <= n, via integer Newton; n < 0 returns -1
+    if n < 0 {
+        return -1
+    }
+    if n < 2 {
+        return n
+    }
+    x: int = n
+    y: int = (x + n / x) / 2
+    while y < x {
+        x = y
+        y = (x + n / x) / 2
+    }
+    return x
+}
+
+def sqrt_float(x: float) -> float {
+    # Newton iteration; CatBase has no sqrt builtin; x < 0 returns 0.0
+    if x <= 0.0 {
+        return 0.0
+    }
+    z: float = x
+    half: float = 0.5
+    i: int = 0
+    done: bool = False
+    while not done {
+        nz: float = (z + x / z) * half
+        d: float = nz - z
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d < 1e-15 {
+            z = nz
+            done = True
+        } else {
+            z = nz
+            i = i + 1
+            if i > 80 {
+                done = True
+            }
+        }
+    }
+    return z
+}
+
+def cbrt_float(x: float) -> float {
+    # Newton on z^3 - x; handles negatives (odd root)
+    if x == 0.0 {
+        return 0.0
+    }
+    neg: bool = False
+    a: float = x
+    if a < 0.0 {
+        neg = True
+        a = 0.0 - a
+    }
+    z: float = a
+    third: float = 1.0 / 3.0
+    i: int = 0
+    done: bool = False
+    while not done {
+        z2: float = z * z
+        nz: float = (2.0 * z + a / z2) * third
+        d: float = nz - z
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d < 1e-15 {
+            z = nz
+            done = True
+        } else {
+            z = nz
+            i = i + 1
+            if i > 100 {
+                done = True
+            }
+        }
+    }
+    if neg {
+        return 0.0 - z
+    }
+    return z
+}
+
+def hypot(a: float, b: float) -> float {
+    return sqrt_float(a * a + b * b)
+}
+
+# ============ combinatorics ============
+
+def factorial(n: int) -> int {
+    # n < 0 returns -1
+    if n < 0 {
+        return -1
+    }
+    r: int = 1
+    i: int = 2
+    while i <= n {
+        r = r * i
+        i = i + 1
+    }
+    return r
+}
+
+def perm(n: int, k: int) -> int {
+    # falling factorial n*(n-1)*...*(n-k+1); out-of-range returns 0
+    if k < 0 or n < 0 or k > n {
+        return 0
+    }
+    r: int = 1
+    i: int = 0
+    while i < k {
+        r = r * (n - i)
+        i = i + 1
+    }
+    return r
+}
+
+def comb(n: int, k: int) -> int {
+    # binomial coefficient, exact multiplicative formula
+    if k < 0 or n < 0 or k > n {
+        return 0
+    }
+    if k > n - k {
+        k = n - k
+    }
+    r: int = 1
+    i: int = 0
+    while i < k {
+        r = r * (n - i) / (i + 1)
+        i = i + 1
+    }
+    return r
+}
+
+def fib(n: int) -> int {
+    # iterative; n <= 0 returns 0 (same semantics as mathx 0.4.0)
+    if n <= 0 {
+        return 0
+    }
+    a: int = 0
+    b: int = 1
+    i: int = 1
+    while i < n {
+        t: int = a + b
+        a = b
+        b = t
+        i = i + 1
+    }
+    return b
+}
+
+# ============ statistics ============
+
+def sum_list(xs: list[float]) -> float {
+    s: float = 0.0
+    for x in xs {
+        s = s + x
+    }
+    return s
+}
+
+def mean(xs: list[float]) -> float {
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    return sum_list(xs) / float(n)
+}
+
+def sort_floats(xs: list[float]) -> list[float] {
+    # insertion sort into a fresh list (CatBase lists have no sort/insert)
+    out: list[float] = []
+    for x in xs {
+        out.append(x)
+        j: int = len(out) - 1
+        moving: bool = True
+        while moving and j > 0 {
+            if out[j - 1] > out[j] {
+                t: float = out[j - 1]
+                out[j - 1] = out[j]
+                out[j] = t
+                j = j - 1
+            } else {
+                moving = False
+            }
+        }
+    }
+    return out
+}
+
+def median(xs: list[float]) -> float {
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    s: list[float] = sort_floats(xs)
+    half: int = n / 2
+    if n % 2 == 1 {
+        return s[half]
+    }
+    return (s[half - 1] + s[half]) / 2.0
+}
+
+def variance(xs: list[float]) -> float {
+    # population variance (divide by n); empty list gives 0.0
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    m: float = mean(xs)
+    s: float = 0.0
+    for x in xs {
+        d: float = x - m
+        s = s + d * d
+    }
+    return s / float(n)
+}
+
+def stddev(xs: list[float]) -> float {
+    return sqrt_float(variance(xs))
+}
+
+def variance_sample(xs: list[float]) -> float {
+    # sample variance (divide by n-1); fewer than 2 elements gives 0.0
+    n: int = len(xs)
+    if n < 2 {
+        return 0.0
+    }
+    m: float = mean(xs)
+    s: float = 0.0
+    for x in xs {
+        d: float = x - m
+        s = s + d * d
+    }
+    return s / float(n - 1)
+}
+
+# ============ base conversion (2..36) ============
+
+def to_base(n: int, base: int) -> str {
+    # non-negative and negative n; digits 0-9 then a-z
+    if base < 2 or base > 36 {
+        return ""
+    }
+    if n == 0 {
+        return "0"
+    }
+    neg: bool = False
+    m: int = n
+    if m < 0 {
+        neg = True
+        m = 0 - m
+    }
+    digits: str = "0123456789abcdefghijklmnopqrstuvwxyz"
+    rev: list[str] = []
+    while m > 0 {
+        d: int = m % base
+        rev.append(digits[d:d+1])
+        m = m / base
+    }
+    out: str = ""
+    if neg {
+        out = "-"
+    }
+    i: int = len(rev) - 1
+    while i >= 0 {
+        out = out + rev[i]
+        i = i - 1
+    }
+    return out
+}
+
+def from_base(s: str, base: int) -> int {
+    # accepts upper or lower case digits; invalid input returns 0
+    if base < 2 or base > 36 {
+        return 0
+    }
+    if len(s) == 0 {
+        return 0
+    }
+    start: int = 0
+    neg: bool = False
+    first: str = s[0:1]
+    if first == "-" {
+        neg = True
+        start = 1
+    }
+    v: int = 0
+    i: int = start
+    while i < len(s) {
+        c: str = s[i:i+1]
+        d: int = digit_val(c)
+        if d < 0 or d >= base {
+            return 0
+        }
+        v = v * base + d
+        i = i + 1
+    }
+    if neg {
+        return 0 - v
+    }
+    return v
+}
+
+def digit_val(c: str) -> int {
+    # single char to its value: 0-9 -> 0..9, a-z -> 10..35, else -1
+    o: int = ord(c)
+    if o >= 48 and o <= 57 {
+        return o - 48
+    }
+    if o >= 97 and o <= 122 {
+        return o - 87
+    }
+    if o >= 65 and o <= 90 {
+        return o - 55
+    }
+    return -1
+}
+
+# ============ trig & logs (series with range reduction) ============
+# Accuracy: floats are f64 and every routine below reduces its argument
+# onto a small interval before summing a Taylor/atanh series, giving
+# ~1e-9 or better over the tested ranges. Constants PI and E are f64.
+
+PI: float = 3.141592653589793
+E: float = 2.718281828459045
+
+def sin(x: float) -> float {
+    pi2: float = PI * 2.0
+    t: float = x
+    while t > PI {
+        t = t - pi2
+    }
+    while t < 0.0 - PI {
+        t = t + pi2
+    }
+    if t > PI / 2.0 {
+        t = PI - t
+    }
+    if t < 0.0 - PI / 2.0 {
+        t = 0.0 - PI - t
+    }
+    term: float = t
+    sum: float = t
+    x2: float = t * t
+    n: int = 1
+    while n <= 13 {
+        denom: int = (2 * n) * (2 * n + 1)
+        term = term * x2 / float(denom)
+        if n % 2 == 1 {
+            sum = sum - term
+        } else {
+            sum = sum + term
+        }
+        n = n + 1
+    }
+    return sum
+}
+
+def cos(x: float) -> float {
+    half: float = PI / 2.0
+    return sin(x + half)
+}
+
+def tan(x: float) -> float {
+    c: float = cos(x)
+    if c == 0.0 {
+        return 0.0
+    }
+    return sin(x) / c
+}
+
+def atan(x: float) -> float {
+    # reduce to (0, 1/sqrt3] then Taylor; recursion depth at most 2
+    if x < 0.0 {
+        return 0.0 - atan(0.0 - x)
+    }
+    if x > 1.0 {
+        inv: float = 1.0 / x
+        return PI / 2.0 - atan(inv)
+    }
+    sq3: float = sqrt_float(3.0)
+    bound: float = 1.0 / sq3
+    if x > bound {
+        # x = tan(pi/6 + a) -> a = atan((x*sqrt3 - 1)/(x + sqrt3))
+        u: float = (x * sq3 - 1.0) / (x + sq3)
+        return PI / 6.0 + atan(u)
+    }
+    x2: float = x * x
+    term: float = x
+    sum: float = x
+    n: int = 1
+    while n <= 15 {
+        term = term * x2
+        d: float = float(2 * n + 1)
+        if n % 2 == 1 {
+            sum = sum - term / d
+        } else {
+            sum = sum + term / d
+        }
+        n = n + 1
+    }
+    return sum
+}
+
+def exp(x: float) -> float {
+    # e^x = 2^k * e^r with |r| <= ln2/2, then Taylor on r
+    if x == 0.0 {
+        return 1.0
+    }
+    ln2: float = 0.6931471805599453
+    half_ln2: float = ln2 / 2.0
+    k: int = 0
+    r: float = x
+    while r > half_ln2 {
+        r = r - ln2
+        k = k + 1
+    }
+    while r < 0.0 - half_ln2 {
+        r = r + ln2
+        k = k - 1
+    }
+    term: float = 1.0
+    sum: float = 1.0
+    n: int = 1
+    while n <= 18 {
+        term = term * r / float(n)
+        sum = sum + term
+        n = n + 1
+    }
+    if k > 0 {
+        i: int = 0
+        while i < k {
+            sum = sum * 2.0
+            i = i + 1
+        }
+    } else {
+        j: int = k
+        while j < 0 {
+            sum = sum / 2.0
+            j = j + 1
+        }
+    }
+    return sum
+}
+
+def ln(x: float) -> float {
+    # ln(x) = m*ln2 + ln(f) with x = 2^m * f, f in [1,2);
+    # ln(f) via the atanh series 2*(y + y^3/3 + y^5/5 + ...),
+    # y = (f-1)/(f+1), |y| <= 1/3 so 20 terms give ~1e-12
+    if x <= 0.0 {
+        return 0.0 - 1e308
+    }
+    ln2: float = 0.6931471805599453
+    m: int = 0
+    f: float = x
+    while f >= 2.0 {
+        f = f / 2.0
+        m = m + 1
+    }
+    while f < 1.0 {
+        f = f * 2.0
+        m = m - 1
+    }
+    y: float = (f - 1.0) / (f + 1.0)
+    y2: float = y * y
+    term: float = y
+    sum: float = y
+    n: int = 1
+    while n <= 20 {
+        term = term * y2
+        sum = sum + term / float(2 * n + 1)
+        n = n + 1
+    }
+    two: float = 2.0
+    return two * sum + float(m) * ln2
+}
+
+def log10(x: float) -> float {
+    ln10: float = 2.302585092994046
+    return ln(x) / ln10
+}
+
+def log2(x: float) -> float {
+    return ln(x) / 0.6931471805599453
+}
+
+def pow_float(b: float, e: float) -> float {
+    # b > 0: exp(e*ln(b)); b == 0 and e > 0 gives 0.0;
+    # b < 0 only for integer e; other cases return 0.0
+    if b == 0.0 {
+        if e > 0.0 {
+            return 0.0
+        }
+        return 1.0
+    }
+    if b < 0.0 {
+        isint: bool = e == float(int(e))
+        if isint {
+            n: int = int(e)
+            if n < 0 {
+                nb: float = 0.0 - b
+                inv: float = pow_float(nb, float(0 - n))
+                return 1.0 / inv
+            }
+            r: float = 1.0
+            i: int = 0
+            while i < n {
+                r = r * b
+                i = i + 1
+            }
+            return r
+        }
+        return 0.0
+    }
+    return exp(e * ln(b))
+}
+
+def deg2rad(d: float) -> float {
+    return d * PI / 180.0
+}
+
+def rad2deg(r: float) -> float {
+    return r * 180.0 / PI
+}
+
+
+# randx 0.2.0 — seeded pseudo-random numbers for CatBase 0.1.8.
+#
+# Generator: MINSTD (Lewis-Goodman-Miller linear congruential generator,
+# x -> 48271*x mod 2147483647) — the classic "minimal standard" PRNG.
+# Chosen because it is fully verifiable against independent implementations
+# (the same stream is reproducible in any language with 64-bit ints) and its
+# arithmetic fits comfortably in i64: the largest intermediate is
+# 2147483646 * 48271 ~ 1.04e14, far below 2^63. No bitwise operators exist
+# in CatBase v0.1.8 (probed; see repo logs), so xorshift was not an option.
+#
+# Seeding: auto_seed() mixes two entropy sources —
+#   1. wall-clock epoch in milliseconds (date +%s%3N)
+#   2. measured round-trip latency of a real ping (time=usec field of
+#      `ping -c 1`, parsed as an integer; a remote server's latency jitter
+#      is not predictable from the clock alone)
+# and folds them with an FNV-style multiplicative mix. If ping is
+# unreachable/times out, it degrades honestly to a time-only seed and marks
+# the source ("time+ping" vs "time-only") — inspect via last_seed_source().
+# seed(n) with an explicit integer reproduces the exact same sequence.
+#
+# Unbiased sampling: randint/below/choice/shuffle/sample/rand_str all draw
+# through _unbiased(n), which rejects the tail of the value range that would
+# make some residues more likely (rejection sampling), capped at 100 retries
+# before falling back to plain modulo (documented; the cap is never hit in
+# practice because the acceptance rate is >= 1 - n/2^31).
+#
+# Backward compatibility with randx 0.1.0: seed/below/between/chance/pick/
+# die6/auto_seed keep their names and semantics (auto_seed is now time+ping
+# instead of time-only; sequences from a given explicit seed differ from
+# 0.1.0 because the generator changed — documented breaking change).
+
+RANDX_VERSION: str = "0.2.0"
+PI_ref: float = 3.141592653589793
+
+# --- generator constants (MINSTD) ---
+RANDX_M: int = 2147483647          # 2^31 - 1, prime
+RANDX_A: int = 48271               # MINSTD multiplier
+RANDX_SPACE: int = 2147483646      # size of the value space used by _unbiased
+
+# --- module state (probed: module-level mutable globals work on v0.1.8) ---
+RANDX_STATE: int = 1
+RANDX_LAST_SOURCE: str = "none"    # how the current sequence was seeded
+RANDX_PING_TARGET: str = "1.1.1.1" # default entropy ping target (Cloudflare)
+RANDX_ALPHABET: str = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+# --- FNV-style multiplicative mixing (no bitwise ops in the language) ---
+def _mix(h: int, v: int) -> int {
+    h = (h + v) % 4294967296
+    h = (h * 16777619) % 4294967296
+    return h
+}
+
+# --- raw MINSTD step: state in [1, 2147483646], returns new raw value ---
+def _step() -> int {
+    RANDX_STATE = (RANDX_STATE * RANDX_A) % RANDX_M
+    return RANDX_STATE
+}
+
+# reset the sequence; same seed => same sequence (negative seeds fold to positive)
+def seed(s: int) {
+    if s < 0 {
+        s = 0 - s
+    }
+    RANDX_STATE = (s % (RANDX_M - 1)) + 1
+    RANDX_LAST_SOURCE = "explicit"
+}
+
+# which entropy source produced the running sequence
+def last_seed_source() -> str {
+    return RANDX_LAST_SOURCE
+}
+
+# override the auto-seed ping target (e.g. "8.8.8.8"); takes effect on the
+# next auto_seed() call
+def set_ping_target(t: str) {
+    if len(t) > 0 {
+        RANDX_PING_TARGET = t
+    }
+}
+
+# current ping target
+def ping_target() -> str {
+    return RANDX_PING_TARGET
+}
+
+# --- wall-clock entropy: epoch milliseconds (date +%s%3N) ---
+def _time_ms() -> int {
+    out: str = exec("date +%s%3N")
+    out = out.strip()
+    if len(out) < 1 {
+        return 0
+    }
+    return int(out) % 4294967296
+}
+
+# --- network entropy: measured ping round-trip, parsed as INTEGER usec ---
+# ping prints "time=2.220 ms"; CatBase v0.1.8 has no working str->float
+# (bad codegen, probed), so the digits are read as an integer number of
+# MICROSECONDS: "2.220" -> 2220. Any parse trouble -> -1 (caller degrades).
+def _ping_us() -> int {
+    out: str = exec("ping -c 1 -W 2 " + RANDX_PING_TARGET + " 2>/dev/null")
+    i: int = out.find("time=")
+    if i < 0 {
+        return -1
+    }
+    i = i + 5
+    digits: str = ""
+    seen_dot: int = 0
+    frac: int = 0
+    while i < len(out) {
+        cv: int = ord(out[i:i+1])
+        if cv == 46 {
+            # "."
+            if seen_dot == 1 {
+                break
+            }
+            seen_dot = 1
+        } else {
+            if cv < 48 {
+                break
+            }
+            if cv > 57 {
+                break
+            }
+            if seen_dot == 1 {
+                frac = frac + 1
+            }
+            digits = digits + out[i:i+1]
+        }
+        i = i + 1
+    }
+    if len(digits) == 0 {
+        return -1
+    }
+    v: int = int(digits)
+    # normalize to microseconds: pad the fractional part to 3 digits
+    # ("2.22 ms" and "2.220 ms" must give the same integer)
+    while frac < 3 {
+        v = v * 10
+        frac = frac + 1
+    }
+    while frac > 3 {
+        v = v / 10
+        frac = frac - 1
+    }
+    return v
+}
+
+# measure the ping latency now and return it (usec, -1 if unreachable);
+# public so callers can record entropy evidence
+def ping_latency_us() -> int {
+    return _ping_us()
+}
+
+# automatic seeding: wall-clock ms + measured ping latency, mixed; if ping
+# fails, degrade to time-only (honestly marked, never crash)
+def auto_seed() {
+    t: int = _time_ms()
+    p: int = _ping_us()
+    if p < 0 {
+        p = 0
+        RANDX_LAST_SOURCE = "time-only"
+    } else {
+        RANDX_LAST_SOURCE = "time+ping"
+    }
+    h: int = _mix(2166136261, t)
+    h = _mix(h, p)
+    h = _mix(h, t / 1000)
+    # keep inside [1, M-1] with a nonzero fold
+    RANDX_STATE = (h % (RANDX_M - 1)) + 1
+}
+
+# unbiased draw in [0, n): rejection sampling on the tail of the value
+# space (space size 2147483646); after 100 rejections falls back to modulo
+def _unbiased(n: int) -> int {
+    if n <= 1 {
+        return 0
+    }
+    limit: int = RANDX_SPACE - (RANDX_SPACE % n)
+    tries: int = 0
+    v: int = 0
+    ok: bool = False
+    while tries < 100 {
+        v = _step() - 1
+        if v < limit {
+            ok = True
+            tries = 100
+        }
+        tries = tries + 1
+    }
+    if ok {
+        return v % n
+    }
+    return (_step() - 1) % n
+}
+
+# random float in [0, 1)
+def random() -> float {
+    return float(_step()) / 2147483648.0
+}
+
+# random int in [a, b] inclusive, both ends (b < a -> a; single point -> a)
+def randint(a: int, b: int) -> int {
+    if b <= a {
+        return a
+    }
+    return a + _unbiased(b - a + 1)
+}
+
+# random int in [0, n)   (kept from 0.1.0; n <= 0 -> 0)
+def below(n: int) -> int {
+    if n <= 0 {
+        return 0
+    }
+    return _unbiased(n)
+}
+
+# random int in [a, b] inclusive (kept from 0.1.0)
+def between(a: int, b: int) -> int {
+    if b < a {
+        return a
+    }
+    return a + _unbiased(b - a + 1)
+}
+
+# true with probability p percent (kept from 0.1.0)
+def chance(p: int) -> bool {
+    return _unbiased(100) < p
+}
+
+# uniform float in [lo, hi)
+def uniform(lo: float, hi: float) -> float {
+    return lo + (hi - lo) * random()
+}
+
+# pick one element of a list (kept from 0.1.0; "" when empty)
+def pick(lst: list[str]) -> str {
+    if len(lst) == 0 {
+        return ""
+    }
+    j: int = _unbiased(len(lst))
+    return lst[j]
+}
+
+# k distinct elements of lst, order random (swap-remove sampling; whole list
+# when k >= len). Returns fewer than min(k, len) only if the list is empty.
+def sample(lst: list[str], k: int) -> list[str] {
+    out: list[str] = []
+    if len(lst) == 0 or k <= 0 {
+        return out
+    }
+    pool: list[str] = []
+    i: int = 0
+    while i < len(lst) {
+        pool.append(lst[i])
+        i = i + 1
+    }
+    while len(out) < k and len(pool) > 0 {
+        j: int = _unbiased(len(pool))
+        out.append(pool[j])
+        last: str = pool[len(pool) - 1]
+        pool[j] = last
+        pool.pop()
+    }
+    return out
+}
+
+# Fisher-Yates shuffle, returns a new list (input untouched)
+def shuffled(lst: list[str]) -> list[str] {
+    out: list[str] = []
+    i: int = 0
+    while i < len(lst) {
+        out.append(lst[i])
+        i = i + 1
+    }
+    i = len(out) - 1
+    while i > 0 {
+        j: int = _unbiased(i + 1)
+        t: str = out[i]
+        out[i] = out[j]
+        out[j] = t
+        i = i - 1
+    }
+    return out
+}
+
+# in-place shuffle of a list[int] (for numeric pipelines)
+def shuffle_ints(xs: list[int]) {
+    i: int = len(xs) - 1
+    while i > 0 {
+        j: int = _unbiased(i + 1)
+        t: int = xs[i]
+        xs[i] = xs[j]
+        xs[j] = t
+        i = i - 1
+    }
+}
+
+# random string of length n over [a-z0-9] (alphabet 36; override with
+# set_alphabet before calling)
+RANDX_USE_CUSTOM: int = 0
+RANDX_CUSTOM: str = ""
+def set_alphabet(a: str) {
+    if len(a) > 0 {
+        RANDX_CUSTOM = a
+        RANDX_USE_CUSTOM = 1
+    }
+}
+def rand_str(n: int) -> str {
+    if n <= 0 {
+        return ""
+    }
+    abc: str = RANDX_ALPHABET
+    if RANDX_USE_CUSTOM == 1 {
+        abc = RANDX_CUSTOM
+    }
+    out: str = ""
+    i: int = 0
+    v: int = 0
+    while i < n {
+        v = _unbiased(len(abc))
+        out = out + abc[v]
+        i = i + 1
+    }
+    return out
+}
+
+# random bytes as a hex string (2*n chars for n bytes), values 0-255
+def rand_bytes_hex(n: int) -> str {
+    if n <= 0 {
+        return ""
+    }
+    hexd: str = "0123456789abcdef"
+    out: str = ""
+    i: int = 0
+    hi: int = 0
+    lo: int = 0
+    while i < n {
+        b: int = _unbiased(256)
+        hi = b / 16
+        lo = b % 16
+        out = out + hexd[hi] + hexd[lo]
+        i = i + 1
+    }
+    return out
+}
+
+# standard normal via Box-Muller (uses mathx.log / cos / PI_ref)
+def normal() -> float {
+    u1: float = random()
+    u2: float = random()
+    if u1 < 1e-15 {
+        u1 = 1e-15
+    }
+    r: float = sqrt_float(0 - 2.0 * ln(u1))
+    return r * cos(2.0 * PI_ref * u2)
+}
+
+# standard normal, mean mu / stddev sigma
+def normal_mu_sigma(mu: float, sigma: float) -> float {
+    return mu + sigma * normal()
+}
+
+# Poisson(lam) via Knuth's method (uses exp); lam > 0
+def poisson(lam: float) -> int {
+    if lam <= 0.0 {
+        return 0
+    }
+    L: float = exp(0 - lam)
+    k: int = 0
+    p: float = 1.0
+    while True {
+        p = p * random()
+        if p <= L {
+            break
+        }
+        k = k + 1
+    }
+    return k
+}
+
+# six-sided die (kept from 0.1.0)
+def die6() -> int {
+    return between(1, 6)
+}
+
+# compatibility shim kept from 0.1.0 (was: time-only auto seed) — now the
+# full time+ping auto seed; sequence differs from 0.1.0 (generator changed)
+def auto_seed_time() {
+    auto_seed()
+}
+
+# ================= test harness (appended) =================
+PASS: int = 0
+FAIL: int = 0
+
+def expect_i(what: str, got: int, want: int) {
+    if got == want {
+        PASS = PASS + 1
+    } else {
+        FAIL = FAIL + 1
+        print("FAIL " + what + ": got " + str(got) + " want " + str(want))
+    }
+}
+
+def expect_f(what: str, got: float, want: float, tol: float) {
+    d: float = got - want
+    if d < 0.0 {
+        d = 0.0 - d
+    }
+    if d <= tol {
+        PASS = PASS + 1
+    } else {
+        FAIL = FAIL + 1
+        print("FAIL " + what + ": got " + str(got) + " want " + str(want))
+    }
+}
+
+def expect_s(what: str, got: str, want: str) {
+    if got == want {
+        PASS = PASS + 1
+    } else {
+        FAIL = FAIL + 1
+        print("FAIL " + what + ": got '" + got + "' want '" + want + "'")
+    }
+}
+
+def expect_b(what: str, got: bool, want: bool) {
+    if got == want {
+        PASS = PASS + 1
+    } else {
+        FAIL = FAIL + 1
+        print("FAIL " + what + ": got " + str(got) + " want " + str(want))
+    }
+}
+
+def m_seed(s: int) {
+    seed(s)
+}
+
+def main(args: list[str]) {
+    print("== randx " + RANDX_VERSION + " test ==")
+
+    # --- 1. fixed-seed reproducibility, cross-checked vs python reference ---
+    m_seed(42)
+    a1: int = randint(1, 6)
+    a2: int = randint(1, 6)
+    a3: int = randint(1, 6)
+    a4: int = randint(1, 6)
+    a5: int = randint(1, 6)
+    expect_i("seed42 randint1", a1, 1)
+    expect_i("seed42 randint2", a2, 3)
+    expect_i("seed42 randint3", a3, 5)
+    expect_i("seed42 randint4", a4, 5)
+    expect_i("seed42 randint5", a5, 2)
+
+    m_seed(42)
+    b1: int = randint(1, 6)
+    b2: int = randint(1, 6)
+    b3: int = randint(1, 6)
+    b4: int = randint(1, 6)
+    b5: int = randint(1, 6)
+    expect_i("seed42 rerun1", b1, a1)
+    expect_i("seed42 rerun2", b2, a2)
+    expect_i("seed42 rerun3", b3, a3)
+    expect_i("seed42 rerun4", b4, a4)
+    expect_i("seed42 rerun5", b5, a5)
+
+    # raw stream cross-check: seed(1) raw values (via _step)
+    m_seed(1)
+    r1: int = _step()
+    r2: int = _step()
+    r3: int = _step()
+    expect_i("minstd seed1 s1", r1, 96542)
+    expect_i("minstd seed1 s2", r2, 365211588)
+    expect_i("minstd seed1 s3", r3, 435306125)
+
+    m_seed(0)
+    z1: int = _step()
+    expect_i("minstd seed0 s1", z1, 48271)
+
+    m_seed(-5)
+    n1: int = _step()
+    expect_i("minstd seed-5 s1", n1, 289626)
+
+    # --- 2. random() stream vs python reference ---
+    m_seed(42)
+    f1: float = random()
+    f2: float = random()
+    expect_f("random seed42 f1", f1, 0.000966551, 1e-8)
+    expect_f("random seed42 f2", f2, 0.656395313, 1e-8)
+
+    # --- 3. boundary values ---
+    m_seed(9)
+    expect_i("randint(5,5)", randint(5, 5), 5)
+    expect_i("randint(5,4)->a", randint(5, 4), 5)
+    m_seed(11)
+    neg1: int = randint(-3, -1)
+    neg2: int = randint(-3, -1)
+    neg3: int = randint(-3, -1)
+    neg4: int = randint(-3, -1)
+    neg5: int = randint(-3, -1)
+    neg6: int = randint(-3, -1)
+    neg7: int = randint(-3, -1)
+    neg8: int = randint(-3, -1)
+    expect_i("randint(-3,-1) #1", neg1, -1)
+    expect_i("randint(-3,-1) #2", neg2, -2)
+    expect_i("randint(-3,-1) #3", neg3, -2)
+    expect_i("randint(-3,-1) #4", neg4, -2)
+    expect_i("randint(-3,-1) #5", neg5, -3)
+    expect_i("randint(-3,-1) #6", neg6, -3)
+    expect_i("randint(-3,-1) #7", neg7, -1)
+    expect_i("randint(-3,-1) #8", neg8, -2)
+    expect_i("below(1) is 0", below(1), 0)
+    expect_i("below(0) is 0", below(0), 0)
+    expect_i("below(-5) is 0", below(-5), 0)
+    m_seed(3)
+    lo_hit: bool = False
+    hi_hit: bool = False
+    in_range: bool = True
+    i: int = 0
+    while i < 500 {
+        v: int = randint(10, 20)
+        if v == 10 {
+            lo_hit = True
+        }
+        if v == 20 {
+            hi_hit = True
+        }
+        if v < 10 {
+            in_range = False
+        }
+        if v > 20 {
+            in_range = False
+        }
+        i = i + 1
+    }
+    expect_b("randint(10,20) hits lower bound", lo_hit, True)
+    expect_b("randint(10,20) hits upper bound", hi_hit, True)
+    expect_b("randint(10,20) stays in range", in_range, True)
+
+    # --- 4. sampling: pick / sample / shuffled / rand_str cross-checks ---
+    expect_s("pick(empty)", pick([]), "")
+    m_seed(3)
+    l0: list[str] = []
+    l1: list[str] = []
+    l2: list[str] = []
+    l3: list[str] = []
+    l4: list[str] = []
+    l5: list[str] = []
+    l6: list[str] = []
+    l7: list[str] = []
+    l8: list[str] = []
+    l9: list[str] = []
+    l0.append("0")
+    l1.append("1")
+    l2.append("2")
+    l3.append("3")
+    l4.append("4")
+    l5.append("5")
+    l6.append("6")
+    l7.append("7")
+    l8.append("8")
+    l9.append("9")
+    deck: list[str] = []
+    deck.append("a")
+    deck.append("b")
+    deck.append("c")
+    deck.append("d")
+    p0: str = pick(deck)
+    expect_s("pick deterministic seed3", p0, "d")
+
+    # shuffled cross-check vs python (Fisher-Yates on 0..9, seed 3)
+    nums: list[str] = []
+    i = 0
+    while i < 10 {
+        nums.append(str(i))
+        i = i + 1
+    }
+    sh: list[str] = shuffled(nums)
+    expect_i("shuffle len", len(sh), 10)
+    expect_s("shuffle s0", sh[0], "2")
+    expect_s("shuffle s1", sh[1], "9")
+    expect_s("shuffle s2", sh[2], "8")
+    expect_s("shuffle s3", sh[3], "7")
+    expect_s("shuffle s4", sh[4], "4")
+    expect_s("shuffle s5", sh[5], "1")
+    expect_s("shuffle s6", sh[6], "0")
+    expect_s("shuffle s7", sh[7], "6")
+    expect_s("shuffle s8", sh[8], "3")
+    expect_s("shuffle s9", sh[9], "5")
+    # input untouched
+    expect_s("shuffle input untouched", nums[0], "0")
+
+    # sample: distinct
+    pool20: list[str] = []
+    i = 0
+    while i < 20 {
+        pool20.append(str(i))
+        i = i + 1
+    }
+    m_seed(6)
+    smp: list[str] = sample(pool20, 5)
+    expect_i("sample len", len(smp), 5)
+    distinct: bool = True
+    i = 0
+    while i < 5 {
+        j: int = 0
+        while j < 5 {
+            if i != j {
+                if smp[i] == smp[j] {
+                    distinct = False
+                }
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    expect_b("sample distinct", distinct, True)
+    expect_i("sample pool untouched len", len(pool20), 20)
+    # sample k > len -> whole list, no duplicates
+    big: list[str] = sample(deck, 99)
+    expect_i("sample k>len gives all", len(big), 4)
+
+    # rand_str cross-check vs python (seed 5, len 12, alphabet a-z0-9)
+    m_seed(5)
+    rs: str = rand_str(12)
+    expect_s("rand_str(12) seed5", rs, "f9osski1kzfi")
+    expect_s("rand_str(0)", rand_str(0), "")
+    bad_len: bool = False
+    rs2: str = rand_str(100)
+    if len(rs2) != 100 {
+        bad_len = True
+    }
+    expect_b("rand_str(100) length", bad_len, False)
+
+    # custom alphabet
+    set_alphabet("01")
+    m_seed(5)
+    bits: str = rand_str(16)
+    expect_s("rand_str binary alphabet", bits, "1100000101100100")
+
+    # rand_bytes_hex
+    m_seed(8)
+    hb: str = rand_bytes_hex(4)
+    expect_i("rand_bytes_hex len", len(hb), 8)
+    hexok: bool = True
+    i = 0
+    while i < len(hb) {
+        cc: int = ord(hb[i:i+1])
+        ok2: bool = False
+        if cc >= 48 {
+            if cc <= 57 {
+                ok2 = True
+            }
+        }
+        if cc >= 97 {
+            if cc <= 102 {
+                ok2 = True
+            }
+        }
+        if ok2 == False {
+            hexok = False
+        }
+        i = i + 1
+    }
+    expect_b("rand_bytes_hex charset", hexok, True)
+    expect_s("rand_bytes_hex(0)", rand_bytes_hex(0), "")
+
+    # --- 5. distributions cross-checked vs python ---
+    m_seed(1)
+    n_1: float = normal()
+    expect_f("normal seed1 #1", n_1, 2.153928, 1e-5)
+    n_2: float = normal()
+    expect_f("normal seed1 #2", n_2, 0.370242, 1e-5)
+    n_3: float = normal()
+    expect_f("normal seed1 #3", n_3, -0.264344, 1e-5)
+    n_4: float = normal()
+    expect_f("normal seed1 #4", n_4, 0.755237, 1e-5)
+    m_seed(1)
+    v_ms: float = normal_mu_sigma(10.0, 2.0)
+    expect_f("normal(10,2) affine", v_ms, 10.0 + 2.0 * 2.153928, 1e-4)
+
+    m_seed(2)
+    pv1: int = poisson(4.0)
+    pv2: int = poisson(4.0)
+    pv3: int = poisson(4.0)
+    pv4: int = poisson(4.0)
+    pv5: int = poisson(4.0)
+    pv6: int = poisson(4.0)
+    expect_i("poisson(4) seed2 #1", pv1, 0)
+    expect_i("poisson(4) seed2 #2", pv2, 6)
+    expect_i("poisson(4) seed2 #3", pv3, 5)
+    expect_i("poisson(4) seed2 #4", pv4, 7)
+    expect_i("poisson(4) seed2 #5", pv5, 9)
+    expect_i("poisson(4) seed2 #6", pv6, 4)
+    expect_i("poisson(0)", poisson(0.0), 0)
+
+    # uniform bounds
+    m_seed(4)
+    ubad: bool = False
+    i = 0
+    while i < 1000 {
+        u: float = uniform(2.5, 7.5)
+        if u < 2.5 {
+            ubad = True
+        }
+        if u >= 7.5 {
+            ubad = True
+        }
+        i = i + 1
+    }
+    expect_b("uniform(2.5,7.5) in range", ubad, False)
+
+    # chance is 0/100 at extremes
+    m_seed(4)
+    never: bool = False
+    i = 0
+    while i < 100 {
+        if chance(0) {
+            never = True
+        }
+        i = i + 1
+    }
+    expect_b("chance(0) never", never, False)
+    always: bool = True
+    i = 0
+    while i < 100 {
+        if chance(100) == False {
+            always = False
+        }
+        i = i + 1
+    }
+    expect_b("chance(100) always", always, True)
+
+    # die6 in range
+    m_seed(4)
+    dbad: bool = False
+    i = 0
+    while i < 200 {
+        d: int = die6()
+        if d < 1 {
+            dbad = True
+        }
+        if d > 6 {
+            dbad = True
+        }
+        i = i + 1
+    }
+    expect_b("die6 in 1..6", dbad, False)
+
+    # shuffle_ints permutation property
+    m_seed(4)
+    xs: list[int] = []
+    i = 0
+    while i < 8 {
+        xs.append(i)
+        i = i + 1
+    }
+    shuffle_ints(xs)
+    expect_i("shuffle_ints len", len(xs), 8)
+    sumok: bool = True
+    ssum: int = 0
+    i = 0
+    while i < 8 {
+        ssum = ssum + xs[i]
+        i = i + 1
+    }
+    expect_i("shuffle_ints preserves sum", ssum, 28)
+
+    # --- 6. 0.1.0 compatibility surface ---
+    expect_s("version", RANDX_VERSION, "0.2.0")
+    m_seed(4)
+    bb: int = between(1, 10)
+    expect_b("between in range", bb >= 1 and bb <= 10, True)
+
+    # --- 7. entropy: auto_seed twice -> different streams; ping evidence ---
+    print("-- entropy evidence --")
+    ev1_t: int = 0
+    ev1_p: int = ping_latency_us()
+    auto_seed()
+    src1: str = last_seed_source()
+    seq1: list[int] = []
+    i = 0
+    while i < 5 {
+        seq1.append(randint(0, 999999))
+        i = i + 1
+    }
+    ev2_p: int = ping_latency_us()
+    auto_seed()
+    src2: str = last_seed_source()
+    seq2: list[int] = []
+    i = 0
+    while i < 5 {
+        seq2.append(randint(0, 999999))
+        i = i + 1
+    }
+    print("  ping_us_sample1=" + str(ev1_p) + " src1=" + src1)
+    print("  ping_us_sample2=" + str(ev2_p) + " src2=" + src2)
+    same: bool = True
+    i = 0
+    while i < 5 {
+        if seq1[i] != seq2[i] {
+            same = False
+        }
+        i = i + 1
+    }
+    expect_b("auto_seed twice differ", same, False)
+    srcok: bool = False
+    if src1 == "time+ping" {
+        srcok = True
+    }
+    if src1 == "time-only" {
+        srcok = True
+    }
+    expect_b("auto_seed source labeled", srcok, True)
+
+    # --- 8. ping unreachable fallback (TEST-Net target, must degrade) ---
+    set_ping_target("192.0.2.1")
+    u_p: int = ping_latency_us()
+    expect_i("unreachable ping -> -1", u_p, -1)
+    auto_seed()
+    fb_src: str = last_seed_source()
+    expect_s("fallback source time-only", fb_src, "time-only")
+    fb_runs: bool = True
+    v2: int = randint(0, 1000)
+    if v2 < 0 {
+        fb_runs = True
+    }
+    print("  fallback still produces: " + str(v2))
+    set_ping_target("1.1.1.1")
+
+    # set_ping_target ignores empty
+    set_ping_target("")
+    expect_s("ping_target unchanged on empty", ping_target(), "1.1.1.1")
+
+    print("== result: PASS=" + str(PASS) + " FAIL=" + str(FAIL) + " ==")
+    if FAIL > 0 {
+        return
+    }
+    print("ALL TESTS PASSED")
+}

@@ -1,0 +1,58 @@
+=== randx 0.2.0 build & test (2026-11-11T00:28:30Z) ===
+
+--- probe: ping reachable (1.1.1.1) / unreachable (192.0.2.1) exit codes ---
+ping 1.1.1.1: rtt 2.194ms, exit=0
+ping 192.0.2.1: 100% packet loss, exit=1
+
+--- probe: catbase float-from-str is broken codegen (floatFromInt(Str)) -> parse ping latency as integer microseconds ---
+
+--- unit tests: test.cat (83 assertions) ---
+$ PATH=catcc catcc test.cat -o t1
+Compiling test.cat...
+Compilation successful.
+== randx 0.2.0 test ==
+-- entropy evidence --
+  ping_us_sample1=1990 src1=time+ping
+  ping_us_sample2=2100 src2=time+ping
+  fallback still produces: 64
+== result: PASS=83 FAIL=0 ==
+ALL TESTS PASSED
+exit=0
+
+--- statistical verification: stats.cat ---
+$ catcc stats.cat -o stats && ./stats
+Compilation successful.
+N=100000 bins=100 expected_per_bin=1000
+chi2=104.05000000000001
+min_bin=927 max_bin=1067
+uniformity: PASS(alpha=0.05, df=99, 67.33..134.64)
+1:1023 2:1009 3:1061 4:954 5:969 6:1020 7:1021 8:949 9:966 10:967 
+11:979 12:962 13:1023 14:1027 15:990 16:957 17:1002 18:996 19:957 20:954 
+21:979 22:981 23:989 24:1019 25:1008 26:999 27:1021 28:976 29:983 30:967 
+31:1009 32:962 33:1012 34:1020 35:1015 36:988 37:980 38:1007 39:994 40:993 
+41:1016 42:975 43:1040 44:932 45:1007 46:1027 47:1000 48:1010 49:950 50:1051 
+51:1006 52:970 53:1035 54:1015 55:970 56:994 57:1040 58:1049 59:941 60:1001 
+61:1034 62:1000 63:964 64:1050 65:999 66:927 67:1009 68:1044 69:1008 70:1021 
+71:1067 72:977 73:953 74:1053 75:1067 76:1061 77:956 78:1039 79:1031 80:951 
+81:1030 82:1031 83:1010 84:981 85:1020 86:958 87:1008 88:962 89:1018 90:956 
+91:995 92:1027 93:1005 94:1030 95:982 96:989 97:999 98:1042 99:994 100:1035 
+random_mean=0.5009637836114923
+mean_check: PASS(|mean-0.5|<0.0032, 2sigma)
+normal_mean=0.005749166914464915 normal_var=0.9943697177491616
+normal_check: PASS(mean+-0.02, var 0.96..1.04)
+poisson4_mean=4.00322
+poisson_check: PASS(3.94..4.06)
+exit=0
+
+--- entropy evidence: entropy.cat (6 rounds of auto_seed) ---
+$ catcc entropy.cat -o entropy && ./entropy
+Compilation successful.
+round 1: wall_ms=1794356931099 ping_us=1930 src=time+ping first3=606376,436038,735127
+round 2: wall_ms=1794356931120 ping_us=1880 src=time+ping first3=496371,955898,24757
+round 3: wall_ms=1794356931143 ping_us=2120 src=time+ping first3=7191,412468,2441
+round 4: wall_ms=1794356931166 ping_us=6330 src=time+ping first3=569849,725447,825167
+round 5: wall_ms=1794356931197 ping_us=2040 src=time+ping first3=456251,518964,319006
+round 6: wall_ms=1794356931220 ping_us=1810 src=time+ping first3=530254,466564,477124
+-- two consecutive auto seeds differ --
+a=651842605 b=200416553 differ=True
+exit=0

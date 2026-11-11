@@ -189,11 +189,11 @@ def main() {
 | fmtx | 0.1.0 | 格式化输出 | stringx ^0.3.0 |
 | loganx | 0.1.0 | 带时间戳日志 | — |
 | timex | 0.1.0 | v0.4 新增：真实时间（`iso8601()`/`epoch()`/`stamp()`/`days_between()`，经 `exec(date)`） | stringx ^0.3.0 |
-| randx | 0.1.0 | v0.4 新增：种子化确定性 PRNG（`seed`/`between`/`below`/`pick`/`die6`；LCG + 乘法混叠，无位运算可用故纯 `+ * %` 实现） | timex ^0.1.0 |
+| randx | 0.2.0 | **随机数库**（MINSTD LCG；时间戳+实测 ping 时延混合自动种子、显式 seed 复现、无偏 `randint`、`pick`/`sample`/`shuffled`/`rand_str`/`rand_bytes_hex`、正态/泊松；`logs/randx-build.log` 83 断言 + 10 万次 χ²=104.05） | mathx ^0.5.0 |
 | hellox | 1.0.0 | v0.5.3 新增：首个预编译参考包（含 `bin/hellox` linux-x86_64 ELF） | — |
 | catpm | 0.5.5 | v0.5 新增：PM 本体自举（包内含预编译 `bin/catpm` + 全部源码，供 `self-update`） | — |
 
-mathx 0.4.0→0.5.0 为整库扩容取 minor 步进（7 函数→62 函数，用户许可的既定规则内大步进；diff 见 `diffs/v0.4.0..v0.5.0-mathx.diff`），hashx 为新包首发 0.1.0（全量快照 `diffs/new-hashx-0.1.0.diff`）。历史版本（catpm 0.4.0–0.5.4、mathx 0.2.0–0.4.0 等）已按只留最新版规则删除，完整内容在 registry git 历史（tag `full-history-pre-0.5.5` 定位最后的全量树），找回方法见 [docs/release.md](docs/release.md)。
+mathx 0.4.0→0.5.0 为整库扩容取 minor 步进（7 函数→62 函数，用户许可的既定规则内大步进；diff 见 `diffs/v0.4.0..v0.5.0-mathx.diff`），hashx 为新包首发 0.1.0（全量快照 `diffs/new-hashx-0.1.0.diff`），randx 0.1.0→0.2.0 为重写升级（生成器换 MINSTD + 时间/ping 混合熵源，同轮交付；diff 见 `diffs/v0.1.0..v0.2.0-randx.diff`）。历史版本（catpm 0.4.0–0.5.4、mathx 0.2.0–0.4.0、randx 0.1.0 等）已按只留最新版规则删除，完整内容在 registry git 历史（tag `full-history-pre-0.5.5` 定位最后的全量树），找回方法见 [docs/release.md](docs/release.md)。
 
 本仓库（catpm）只保留 PM 本体：源码、二进制、`package.where`、README/PROTOCOL、安装脚本、日志。**v0.3 及以前放在本仓库的 `registry/`、`registry3/`、`registry-mirror/` 已整体删除（非归档）**——包体与索引全部迁移到 catpm-registry，raw 可达性实测 8/8 个 .cpkg + index.json 全 200（`logs/run4.log` [6/6]）。
 

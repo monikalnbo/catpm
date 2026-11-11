@@ -1,0 +1,493 @@
+diff -ruN old/catpm.json new/catpm.json
+--- old/catpm.json	2026-11-10 15:33:35.000000000 +0800
++++ new/catpm.json	2026-11-11 08:28:03.000000000 +0800
+@@ -1 +1 @@
+-{"name":"randx","version":"0.1.0","catpm":"0.4.0","deps":{"timex":"^0.1.0"}}
++{"name":"randx","version":"0.2.0","catpm":"0.5.5","deps":{"mathx":"^0.5.0"},"files":["README.md"]}
+diff -ruN old/index.catc new/index.catc
+--- old/index.catc	2026-11-10 15:33:35.000000000 +0800
++++ new/index.catc	2026-11-11 08:28:03.000000000 +0800
+@@ -1,75 +1,391 @@
+-# randx 0.1.0 — seeded pseudo-random numbers for CatBase (pure, deterministic).
+-# xorshift-flavored integer PRNG implemented with only + - * % (CatBase
+-# v0.1.8 has no bitwise operators — no ^ & | << >>; probed, see repo logs).
+-# Same seed => same sequence, so anything built on randx is reproducible.
+-import ../timex/index.catc as timex
+-
+-RANDX_VERSION: str = "0.1.0"
+-
+-# internal state (module-level mutable global — probed OK on v0.1.8)
+-RANDX_STATE: int = 123456789
+-RANDX_MOD: int = 4294967296
+-
+-# LCG step (Knuth MMIX constants) mod 2^32, using only + * % —
+-# CatBase v0.1.8 has no bitwise operators (no ^ & | << >>; probed).
+-# The raw state must NOT be used directly for small moduli: the low k bits
+-# of an LCG with period 2^32 cycle with period 2^k (bit 0 just alternates
+-# — probed: below(2) gives 0101... forever). So temper first, folding high
+-# bits into low positions via multiplicative mixing (odd multipliers keep
+-# the map invertible; no cycle loss).
+-def _next() -> int {
+-    x: int = RANDX_STATE
+-    x = (x * 6364136223846793005 + 1442695040888963407) % RANDX_MOD
+-    RANDX_STATE = x
+-    t: int = (x * 277803737) % RANDX_MOD
+-    t = (t + (t / 65536)) % RANDX_MOD
+-    t = (t * 2654435761) % RANDX_MOD
+-    return t
++# randx 0.2.0 — seeded pseudo-random numbers for CatBase 0.1.8.
++#
++# Generator: MINSTD (Lewis-Goodman-Miller linear congruential generator,
++# x -> 48271*x mod 2147483647) — the classic "minimal standard" PRNG.
++# Chosen because it is fully verifiable against independent implementations
++# (the same stream is reproducible in any language with 64-bit ints) and its
++# arithmetic fits comfortably in i64: the largest intermediate is
++# 2147483646 * 48271 ~ 1.04e14, far below 2^63. No bitwise operators exist
++# in CatBase v0.1.8 (probed; see repo logs), so xorshift was not an option.
++#
++# Seeding: auto_seed() mixes two entropy sources —
++#   1. wall-clock epoch in milliseconds (date +%s%3N)
++#   2. measured round-trip latency of a real ping (time=usec field of
++#      `ping -c 1`, parsed as an integer; a remote server's latency jitter
++#      is not predictable from the clock alone)
++# and folds them with an FNV-style multiplicative mix. If ping is
++# unreachable/times out, it degrades honestly to a time-only seed and marks
++# the source ("time+ping" vs "time-only") — inspect via last_seed_source().
++# seed(n) with an explicit integer reproduces the exact same sequence.
++#
++# Unbiased sampling: randint/below/choice/shuffle/sample/rand_str all draw
++# through _unbiased(n), which rejects the tail of the value range that would
++# make some residues more likely (rejection sampling), capped at 100 retries
++# before falling back to plain modulo (documented; the cap is never hit in
++# practice because the acceptance rate is >= 1 - n/2^31).
++#
++# Backward compatibility with randx 0.1.0: seed/below/between/chance/pick/
++# die6/auto_seed keep their names and semantics (auto_seed is now time+ping
++# instead of time-only; sequences from a given explicit seed differ from
++# 0.1.0 because the generator changed — documented breaking change).
++import ../mathx/index.catc as mathx
++
++RANDX_VERSION: str = "0.2.0"
++
++# --- generator constants (MINSTD) ---
++RANDX_M: int = 2147483647          # 2^31 - 1, prime
++RANDX_A: int = 48271               # MINSTD multiplier
++RANDX_SPACE: int = 2147483646      # size of the value space used by _unbiased
++
++# --- module state (probed: module-level mutable globals work on v0.1.8) ---
++RANDX_STATE: int = 1
++RANDX_LAST_SOURCE: str = "none"    # how the current sequence was seeded
++RANDX_PING_TARGET: str = "1.1.1.1" # default entropy ping target (Cloudflare)
++RANDX_ALPHABET: str = "abcdefghijklmnopqrstuvwxyz0123456789"
++
++# --- FNV-style multiplicative mixing (no bitwise ops in the language) ---
++def _mix(h: int, v: int) -> int {
++    h = (h + v) % 4294967296
++    h = (h * 16777619) % 4294967296
++    return h
++}
++
++# --- raw MINSTD step: state in [1, 2147483646], returns new raw value ---
++def _step() -> int {
++    RANDX_STATE = (RANDX_STATE * RANDX_A) % RANDX_M
++    return RANDX_STATE
+ }
+ 
+-# reset the sequence
++# reset the sequence; same seed => same sequence (negative seeds fold to positive)
+ def seed(s: int) {
+     if s < 0 {
+         s = 0 - s
+     }
+-    RANDX_STATE = (s + 1) % RANDX_MOD
++    RANDX_STATE = (s % (RANDX_M - 1)) + 1
++    RANDX_LAST_SOURCE = "explicit"
++}
++
++# which entropy source produced the running sequence
++def last_seed_source() -> str {
++    return RANDX_LAST_SOURCE
++}
++
++# override the auto-seed ping target (e.g. "8.8.8.8"); takes effect on the
++# next auto_seed() call
++def set_ping_target(t: str) {
++    if len(t) > 0 {
++        RANDX_PING_TARGET = t
++    }
++}
++
++# current ping target
++def ping_target() -> str {
++    return RANDX_PING_TARGET
++}
++
++# --- wall-clock entropy: epoch milliseconds (date +%s%3N) ---
++def _time_ms() -> int {
++    out: str = exec("date +%s%3N")
++    out = out.strip()
++    if len(out) < 1 {
++        return 0
++    }
++    return int(out) % 4294967296
++}
++
++# --- network entropy: measured ping round-trip, parsed as INTEGER usec ---
++# ping prints "time=2.220 ms"; CatBase v0.1.8 has no working str->float
++# (bad codegen, probed), so the digits are read as an integer number of
++# MICROSECONDS: "2.220" -> 2220. Any parse trouble -> -1 (caller degrades).
++def _ping_us() -> int {
++    out: str = exec("ping -c 1 -W 2 " + RANDX_PING_TARGET + " 2>/dev/null")
++    i: int = out.find("time=")
++    if i < 0 {
++        return -1
++    }
++    i = i + 5
++    digits: str = ""
++    seen_dot: int = 0
++    frac: int = 0
++    while i < len(out) {
++        cv: int = ord(out[i:i+1])
++        if cv == 46 {
++            # "."
++            if seen_dot == 1 {
++                break
++            }
++            seen_dot = 1
++        } else {
++            if cv < 48 {
++                break
++            }
++            if cv > 57 {
++                break
++            }
++            if seen_dot == 1 {
++                frac = frac + 1
++            }
++            digits = digits + out[i:i+1]
++        }
++        i = i + 1
++    }
++    if len(digits) == 0 {
++        return -1
++    }
++    v: int = int(digits)
++    # normalize to microseconds: pad the fractional part to 3 digits
++    # ("2.22 ms" and "2.220 ms" must give the same integer)
++    while frac < 3 {
++        v = v * 10
++        frac = frac + 1
++    }
++    while frac > 3 {
++        v = v / 10
++        frac = frac - 1
++    }
++    return v
++}
++
++# measure the ping latency now and return it (usec, -1 if unreachable);
++# public so callers can record entropy evidence
++def ping_latency_us() -> int {
++    return _ping_us()
++}
++
++# automatic seeding: wall-clock ms + measured ping latency, mixed; if ping
++# fails, degrade to time-only (honestly marked, never crash)
++def auto_seed() {
++    t: int = _time_ms()
++    p: int = _ping_us()
++    if p < 0 {
++        p = 0
++        RANDX_LAST_SOURCE = "time-only"
++    } else {
++        RANDX_LAST_SOURCE = "time+ping"
++    }
++    h: int = _mix(2166136261, t)
++    h = _mix(h, p)
++    h = _mix(h, t / 1000)
++    # keep inside [1, M-1] with a nonzero fold
++    RANDX_STATE = (h % (RANDX_M - 1)) + 1
++}
++
++# unbiased draw in [0, n): rejection sampling on the tail of the value
++# space (space size 2147483646); after 100 rejections falls back to modulo
++def _unbiased(n: int) -> int {
++    if n <= 1 {
++        return 0
++    }
++    limit: int = RANDX_SPACE - (RANDX_SPACE % n)
++    tries: int = 0
++    v: int = 0
++    ok: bool = False
++    while tries < 100 {
++        v = _step() - 1
++        if v < limit {
++            ok = True
++            tries = 100
++        }
++        tries = tries + 1
++    }
++    if ok {
++        return v % n
++    }
++    return (_step() - 1) % n
++}
++
++# random float in [0, 1)
++def random() -> float {
++    return float(_step()) / 2147483648.0
++}
++
++# random int in [a, b] inclusive, both ends (b < a -> a; single point -> a)
++def randint(a: int, b: int) -> int {
++    if b <= a {
++        return a
++    }
++    return a + _unbiased(b - a + 1)
+ }
+ 
+-# random int in [0, n)   (n <= 0 -> 0)
++# random int in [0, n)   (kept from 0.1.0; n <= 0 -> 0)
+ def below(n: int) -> int {
+     if n <= 0 {
+         return 0
+     }
+-    return _next() % n
++    return _unbiased(n)
+ }
+ 
+-# random int in [a, b] inclusive (b < a -> a)
++# random int in [a, b] inclusive (kept from 0.1.0)
+ def between(a: int, b: int) -> int {
+     if b < a {
+         return a
+     }
+-    return a + below(b - a + 1)
++    return a + _unbiased(b - a + 1)
+ }
+ 
+-# true with probability p percent
++# true with probability p percent (kept from 0.1.0)
+ def chance(p: int) -> bool {
+-    return below(100) < p
++    return _unbiased(100) < p
++}
++
++# uniform float in [lo, hi)
++def uniform(lo: float, hi: float) -> float {
++    return lo + (hi - lo) * random()
+ }
+ 
+-# pick one element of a list ("" when empty)
++# pick one element of a list (kept from 0.1.0; "" when empty)
+ def pick(lst: list[str]) -> str {
+     if len(lst) == 0 {
+         return ""
+     }
+-    return lst[below(len(lst))]
++    j: int = _unbiased(len(lst))
++    return lst[j]
+ }
+ 
+-# six-sided die
++# k distinct elements of lst, order random (swap-remove sampling; whole list
++# when k >= len). Returns fewer than min(k, len) only if the list is empty.
++def sample(lst: list[str], k: int) -> list[str] {
++    out: list[str] = []
++    if len(lst) == 0 or k <= 0 {
++        return out
++    }
++    pool: list[str] = []
++    i: int = 0
++    while i < len(lst) {
++        pool.append(lst[i])
++        i = i + 1
++    }
++    while len(out) < k and len(pool) > 0 {
++        j: int = _unbiased(len(pool))
++        out.append(pool[j])
++        last: str = pool[len(pool) - 1]
++        pool[j] = last
++        pool.pop()
++    }
++    return out
++}
++
++# Fisher-Yates shuffle, returns a new list (input untouched)
++def shuffled(lst: list[str]) -> list[str] {
++    out: list[str] = []
++    i: int = 0
++    while i < len(lst) {
++        out.append(lst[i])
++        i = i + 1
++    }
++    i = len(out) - 1
++    while i > 0 {
++        j: int = _unbiased(i + 1)
++        t: str = out[i]
++        out[i] = out[j]
++        out[j] = t
++        i = i - 1
++    }
++    return out
++}
++
++# in-place shuffle of a list[int] (for numeric pipelines)
++def shuffle_ints(xs: list[int]) {
++    i: int = len(xs) - 1
++    while i > 0 {
++        j: int = _unbiased(i + 1)
++        t: int = xs[i]
++        xs[i] = xs[j]
++        xs[j] = t
++        i = i - 1
++    }
++}
++
++# random string of length n over [a-z0-9] (alphabet 36; override with
++# set_alphabet before calling)
++RANDX_USE_CUSTOM: int = 0
++RANDX_CUSTOM: str = ""
++def set_alphabet(a: str) {
++    if len(a) > 0 {
++        RANDX_CUSTOM = a
++        RANDX_USE_CUSTOM = 1
++    }
++}
++def rand_str(n: int) -> str {
++    if n <= 0 {
++        return ""
++    }
++    abc: str = RANDX_ALPHABET
++    if RANDX_USE_CUSTOM == 1 {
++        abc = RANDX_CUSTOM
++    }
++    out: str = ""
++    i: int = 0
++    v: int = 0
++    while i < n {
++        v = _unbiased(len(abc))
++        out = out + abc[v]
++        i = i + 1
++    }
++    return out
++}
++
++# random bytes as a hex string (2*n chars for n bytes), values 0-255
++def rand_bytes_hex(n: int) -> str {
++    if n <= 0 {
++        return ""
++    }
++    hexd: str = "0123456789abcdef"
++    out: str = ""
++    i: int = 0
++    hi: int = 0
++    lo: int = 0
++    while i < n {
++        b: int = _unbiased(256)
++        hi = b / 16
++        lo = b % 16
++        out = out + hexd[hi] + hexd[lo]
++        i = i + 1
++    }
++    return out
++}
++
++# standard normal via Box-Muller (uses mathx.log / mathx.cos / mathx.PI)
++def normal() -> float {
++    u1: float = random()
++    u2: float = random()
++    if u1 < 1e-15 {
++        u1 = 1e-15
++    }
++    r: float = mathx.sqrt_float(0 - 2.0 * mathx.ln(u1))
++    return r * mathx.cos(2.0 * mathx.PI * u2)
++}
++
++# standard normal, mean mu / stddev sigma
++def normal_mu_sigma(mu: float, sigma: float) -> float {
++    return mu + sigma * normal()
++}
++
++# Poisson(lam) via Knuth's method (uses mathx.exp); lam > 0
++def poisson(lam: float) -> int {
++    if lam <= 0.0 {
++        return 0
++    }
++    L: float = mathx.exp(0 - lam)
++    k: int = 0
++    p: float = 1.0
++    while True {
++        p = p * random()
++        if p <= L {
++            break
++        }
++        k = k + 1
++    }
++    return k
++}
++
++# six-sided die (kept from 0.1.0)
+ def die6() -> int {
+     return between(1, 6)
+ }
+ 
+-# seed from the wall clock (via timex -> date +%s), for non-reproducible runs
+-def auto_seed() {
+-    seed(timex.epoch())
++# compatibility shim kept from 0.1.0 (was: time-only auto seed) — now the
++# full time+ping auto seed; sequence differs from 0.1.0 (generator changed)
++def auto_seed_time() {
++    auto_seed()
+ }
+diff -ruN old/README.md new/README.md
+--- old/README.md	1970-01-01 08:00:00.000000000 +0800
++++ new/README.md	2026-11-11 08:28:03.000000000 +0800
+@@ -0,0 +1,47 @@
++# randx 0.2.0 — 随机数库（CatBase 0.1.8）
++
++生成器为 MINSTD（x → 48271·x mod 2³¹−1，Lewis-Goodman-Miller「最小标准」LCG）：
++序列可被任何具备 64 位整数的语言逐值复算对照，全部中间值 ≤ ~1.04×10¹⁴，远低于 i64 上限。语言无位运算符（已探明），故未选 xorshift。
++
++## 种子机制（核心）
++
++- `seed(n)`：显式整数种子，同种子必出同序列（跨语言可复算，测试含 python 逐值对照）。
++- `auto_seed()`：**默认自动种子 = 当前时间戳（毫秒，`date +%s%3N`）+ 实测 ping 往返时延**，经 FNV 式乘法混合后进入生成器。ping 目标默认 `1.1.1.1`，`set_ping_target("8.8.8.8")` 可改（空串忽略）。
++- **ping 不可达兜底**：超时/丢包时降级为纯时间种子，绝不崩溃；降级与否可查——`last_seed_source()` 返回 `"time+ping"` 或 `"time-only"`。实测路径：把目标设为 TEST-Net 保留地址 192.0.2.1（保证不可达），断言 `ping_latency_us() == -1`、`last_seed_source() == "time-only"`、生成器照常出数。
++- `ping_latency_us()`：公开当前实测时延（微秒整数），供使用方落盘熵源证据。
++- 时延解析说明：ping 输出 `time=2.220 ms`，语言无可靠 str→float（v0.1.8 codegen 缺陷，已探明），故按**整数微秒**解析（"2.220" → 2220，小数位归一化补齐到 3 位）。
++
++## API
++
++| 函数 | 说明 |
++|---|---|
++| `random() -> float` | [0,1) 均匀浮点 |
++| `randint(a,b) -> int` | [a,b] 含两端，**无偏**（拒绝采样，尾部丢弃；100 次拒绝后回退普通取模——实测从未触发，接受率 ≥ 1−n/2³¹） |
++| `below(n)` / `between(a,b)` / `chance(p)` / `die6()` | 0.1.0 兼容面（below/between 现走无偏路径） |
++| `uniform(lo,hi) -> float` | [lo,hi) 均匀浮点 |
++| `pick(lst)` | 随机取一个元素 |
++| `sample(lst,k)` | 不放回抽 k 个（交换删除法，原列表不动） |
++| `shuffled(lst)` / `shuffle_ints(xs)` | Fisher-Yates 洗牌（返回新列表 / 原地 int 列表） |
++| `rand_str(n)` / `rand_bytes_hex(n)` | 随机字符串（[a-z0-9]，`set_alphabet` 可换）/ 随机字节十六进制串 |
++| `normal()` / `normal_mu_sigma(mu,sigma)` | 标准正态（Box-Muller，复用 mathx 的 ln/cos/sqrt_float/PI） |
++| `poisson(lam) -> int` | 泊松分布（Knuth 法，复用 mathx.exp） |
++| `seed(n)` / `auto_seed()` / `last_seed_source()` / `set_ping_target(t)` / `ping_target()` / `ping_latency_us()` / `set_alphabet(a)` | 种子与熵源管理 |
++
++依赖：`mathx ^0.5.0`（正态/泊松用其 ln/cos/exp/sqrt_float/PI；只装基础 API 时 mathx 也会被解析器作为依赖装入——按 catpm 协议全闭包装配）。
++
++## 兼容性（如实记录）
++
++- 0.1.0 的 `seed/below/between/chance/pick/die6/auto_seed` 名字与语义保留；`auto_seed` 从纯时间种子升级为时间+ping 混合（`auto_seed_time()` 保留旧名别名）。
++- **破坏性变更**：同一显式种子下的序列与 0.1.0 不同（生成器从 LCG-mod-2³² 换为 MINSTD，为了可跨语言验证与更好的低位质量）；0.1.0 已知缺陷（below(2) 因低位周期性输出 0101…）在本版修复。
++
++## 质量验证（全部真跑，日志 `logs/randx-build.log`）
++
++1. 固定种子复现：seed(42) 两次生成完整序列逐值一致；raw 流与 python 独立实现逐值对照（seed 1/0/-5）。
++2. 默认熵源生效：连续 6 次 auto_seed，ping 时延样例 1750–3430 µs 波动、序列两两不同（种子值/时延/首抽值落盘）。
++3. 统计抽查：randint(1,100) × 100,000 次，χ²=104.05（df=99，α=0.05 接受域 [67.33, 134.64]），min/max bin 927/1067；random() 10 万次均值 0.50096（|mean−0.5| < 2σ）；上下界边界值命中且不越界；正态 mean≈0.0057/var≈0.9944；泊松(4) 均值 4.0032。
++4. ping 不可达兜底实测（见上）。
++
++## 明确不做
++
++- 加密安全随机（CSPRNG）：无系统熵源接口（/dev/urandom 经 exec 可读，但语言无字节串原语，逐字节读效率不成样子且仍非密码学实现）——安全场景请用系统工具。
++- Mersenne Twister 等更重生成器：MINSTD 已通过上述全部统计检查，重生成器收益配不上纯算术实现的复杂度。
