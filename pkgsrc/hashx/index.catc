@@ -1,0 +1,202 @@
+# hashx 0.1.0 — non-cryptographic hashes and checksums for CatBase 0.1.8
+# CatBase v0.1.8 has no bitwise operators, so every xor/shift below is
+# emulated in arithmetic on values kept in [0, 2^32): xor via per-bit
+# comparison, shifts via *2^k / 2^k, and as unsigned via the modulo of
+# the same name. All i64 intermediates stay far below 2^63.
+# Every algorithm is checked byte-for-byte against published test
+# vectors (empty string, "abc", "123456789", "Wikipedia", ...).
+HASHX_VERSION: str = "0.1.0"
+
+MOD32: int = 4294967296
+
+def xor32(a: int, b: int) -> int {
+    # bitwise xor of two values in [0, 2^32), done one bit at a time
+    r: int = 0
+    p: int = 1
+    x: int = a
+    y: int = b
+    i: int = 0
+    while i < 32 {
+        ba: int = x % 2
+        bb: int = y % 2
+        if ba != bb {
+            r = r + p
+        }
+        x = x / 2
+        y = y / 2
+        p = p * 2
+        i = i + 1
+    }
+    return r
+}
+
+def mask32(x: int) -> int {
+    return x % MOD32
+}
+
+# ============ CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320) ============
+
+CRC_TABLE: list[int] = []
+
+def crc_build_table() -> list[int] {
+    table: list[int] = []
+    i: int = 0
+    while i < 256 {
+        c: int = i
+        j: int = 0
+        while j < 8 {
+            if c % 2 == 1 {
+                c = xor32(c / 2, 3988292384)
+            } else {
+                c = c / 2
+            }
+            j = j + 1
+        }
+        table.append(c)
+        i = i + 1
+    }
+    return table
+}
+
+def crc32(s: str) -> int {
+    if len(CRC_TABLE) == 0 {
+        CRC_TABLE = crc_build_table()
+    }
+    crc: int = 4294967295
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        b: int = ord(s[i:i+1])
+        idx: int = xor32(crc % 256, b)
+        crc = xor32(crc / 256, CRC_TABLE[idx])
+        i = i + 1
+    }
+    return xor32(crc, 4294967295)
+}
+
+# ============ Adler-32 ============
+
+def adler32(s: str) -> int {
+    MODA: int = 65521
+    a: int = 1
+    b: int = 0
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        c: int = ord(s[i:i+1])
+        a = a + c
+        if a >= MODA {
+            a = a - MODA
+        }
+        b = b + a
+        if b >= MODA {
+            b = b - MODA
+        }
+        i = i + 1
+    }
+    return b * 65536 + a
+}
+
+# ============ djb2 (Bernstein) ============
+
+def djb2(s: str) -> int {
+    h: int = 5381
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = mask32(h * 33 + ord(s[i:i+1]))
+        i = i + 1
+    }
+    return h
+}
+
+def djb2_xor(s: str) -> int {
+    # djb2 variant h*33 ^ c
+    h: int = 5381
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = xor32(mask32(h * 33), ord(s[i:i+1]))
+        i = i + 1
+    }
+    return h
+}
+
+# ============ sdbm ============
+
+def sdbm(s: str) -> int {
+    # h = c + h*2^6 + h*2^16 - h = c + h*65599
+    h: int = 0
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = mask32(ord(s[i:i+1]) + h * 65599)
+        i = i + 1
+    }
+    return h
+}
+
+# ============ FNV-1a / FNV-1 (32-bit) ============
+
+def fnv1a32(s: str) -> int {
+    h: int = 2166136261
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = xor32(h, ord(s[i:i+1]))
+        h = mask32(h * 16777619)
+        i = i + 1
+    }
+    return h
+}
+
+def fnv1_32(s: str) -> int {
+    # FNV-1 (multiply then xor), kept for completeness
+    h: int = 2166136261
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = mask32(h * 16777619)
+        h = xor32(h, ord(s[i:i+1]))
+        i = i + 1
+    }
+    return h
+}
+
+# ============ hex output ============
+
+def to_hex32(v: int) -> str {
+    # fixed-width 8 lowercase hex digits (input assumed in [0, 2^32))
+    digits: str = "0123456789abcdef"
+    out: str = ""
+    x: int = v
+    i: int = 0
+    while i < 8 {
+        out = digits[x % 16:x % 16 + 1] + out
+        x = x / 16
+        i = i + 1
+    }
+    return out
+}
+
+def crc32_hex(s: str) -> str {
+    return to_hex32(crc32(s))
+}
+
+def adler32_hex(s: str) -> str {
+    return to_hex32(adler32(s))
+}
+
+# ============ scope notes (honest limits) ============
+# - 64-bit variants (FNV-1a 64, xxHash64, ...) are NOT provided: the
+#   64-bit FNV offset basis 0xcbf29ce484222325 itself exceeds the i64
+#   max 2^63-1, and h*prime products overflow i64; CatBase v0.1.8 has
+#   no u64 type and no multiplication that wraps at 2^64.
+# - md5/sha1: rotations and xor emulation are arithmetically possible
+#   (verified in probes), but the step counts (64x16 / 80 rounds) make
+#   a byte-exact pure-arithmetic implementation a large, slow surface
+#   with no security value (both are broken as cryptographic hashes).
+#   Not included; documented instead.
+# - sha256: catpm itself shells out to sha256sum for package integrity
+#   (PROTOCOL.md 3.2) — that division of labor stays with the system
+#   tool by design.

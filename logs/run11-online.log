@@ -1,0 +1,94 @@
+=== m5: raw CDN direct-link verification (2026-11-11T00:07:48Z) ===
+RAW=https://raw.githubusercontent.com/monikalnbo/catpm-registry/main
+  200  index.json
+  200  hashx/hashx-0.1.0.cpkg
+  200  mathx/mathx-0.5.0.cpkg
+  404  mathx/mathx-0.4.0.cpkg
+
+=== m6: fresh project, ONLINE source only (default package.where shipped with catpm) ===
+--- catpm init ---
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+--- catpm add mathx ---
+catpm: added mathx 'latest' to catpm.json (resolves to 0.5.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 2 package(s):
+  - mathx@0.5.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch mathx@0.5.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/mathx/mathx-0.5.0.cpkg
+  prefetch stringx@0.3.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.5.0.cpkg
+  installed mathx@0.5.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+--- catpm add hashx ---
+catpm: added hashx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: https://raw.githubusercontent.com/monikalnbo/catpm-registry/main)
+catpm: resolved 3 package(s):
+  - mathx@0.5.0
+  - hashx@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch hashx@0.1.0 <- https://raw.githubusercontent.com/monikalnbo/catpm-registry/main/hashx/hashx-0.1.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.5.0.cpkg
+  installed mathx@0.5.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/hashx/hashx-0.1.0.cpkg
+  installed hashx@0.1.0 (sha256 ok) -> deps/hashx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+--- catpm list ---
+installed packages in ./deps:
+  hashx  0.1.0
+  mathx  0.5.0
+  stringx  0.3.0
+--- lock ---
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+mathx 0.5.0
+hashx 0.1.0
+stringx 0.3.0
+--- deps tree ---
+deps/hashx/catpm.json
+deps/hashx/index.catc
+deps/hashx/README.md
+deps/mathx/catpm.json
+deps/mathx/index.catc
+deps/mathx/README.md
+deps/stringx/catpm.json
+deps/stringx/index.catc
+
+--- compile & run demo against ONLINE-installed deps ---
+Compiling demo.cat...
+CAIR file generated: <ws>/catbase/runtime/demo.cair
+Invoking CatBase bin compiler...
+Compilation successful.
+cc-exit=0
+== mathx 0.5.0 ==
+fib(10) = 55
+comb(52,5) = 2598960
+gcd/lcm 12,18 = 6 36
+is_prime(97) = True
+prime_factors(360) = 2 2 2 3 3 5 
+isqrt(17) = 4
+sqrt(2) = 1.414213562373095
+sin(pi/6) = 0.5
+atan(1) = 0.785398163397448
+exp(1) = 2.718281828459045
+ln(e) = 1
+to_base(255,16) = ff
+from_base('ff',16) = 255
+mean = 5
+stddev = 2
+totient(36) = 12
+loud_double(21) = 42!
+== hashx 0.1.0 ==
+crc32('abc') = 891568578
+crc32_hex('abc') = 352441c2
+adler32('Wikipedia') = 300286872
+djb2('hello') = 261238937
+sdbm('hello') = 684824882
+fnv1a32('hello') = 1335831723
+run-exit=0

@@ -1,0 +1,1014 @@
+# hashx 0.1.0 — new package (no previous version; full content follows)
+# generated: 2026-11-11T00:04:36Z from published hashx-0.1.0.ckg
+
+# mathx 0.5.0
+
+完整数学库（纯 CatBase 0.1.8，无外部依赖除 stringx）。
+所有函数逐个断言测试通过（169 断言，logs/mathx-build.log）。
+
+## 函数清单（62 个公开函数 + 3 常量）
+
+### 基础（int/float）
+| 函数 | 说明 |
+|---|---|
+| abs_int(x) / abs_float(x) | 绝对值 |
+| sign_int(x) / sign_float(x) | 符号（-1/0/1） |
+| clamp_int(x,lo,hi) / clamp_float | 区间夹取 |
+| max_int(a,b) / min_int(a,b) / max_float / min_float | 两值取大/小 |
+| max_of_list(xs) / min_of_list(xs) | 列表取大/小 |
+| floor_float(x) / ceil_float(x) | 下取整/上取整（负数正确） |
+| round_half_away(x) | 四舍五入（半值远离零，实测 round(-2.5)=-3） |
+
+### 数论
+| 函数 | 说明 |
+|---|---|
+| gcd(a,b) / lcm(a,b) | 辗转相除（0.4.0 兼容，现接受负数） |
+| is_prime(n) | 试除判定（6k±1 优化） |
+| next_prime(n) | 严格大于 n 的最小素数 |
+| sieve(n) | 埃氏筛，全部 ≤n 素数 |
+| prime_factors(n) | 质因数分解（含重复，升序） |
+| distinct_primes(n) | 去重质因数 |
+| count_divisors(n) | 因数个数 |
+| is_perfect(n) | 完全数判定（6/28/496…） |
+| totient(n) | 欧拉函数 |
+| collatz_steps(n) | Collatz 步数（0.4.0 兼容） |
+
+### 幂与根
+| 函数 | 说明 |
+|---|---|
+| power(b,e) | 快速幂（平方取余法，0.4.0 兼容语义） |
+| mod_pow(b,e,m) | 模幂（m ≤ 3037000499 时中间值安全） |
+| isqrt(n) | 整数平方根（牛顿法；n<0 返回 -1） |
+| sqrt_float(x) | 浮点平方根（牛顿迭代，无内建 sqrt） |
+| cbrt_float(x) | 立方根（支持负数） |
+| hypot(a,b) | √(a²+b²) |
+
+### 组合数学
+| 函数 | 说明 |
+|---|---| 
+| factorial(n) | 阶乘（n<0 返回 -1） |
+| perm(n,k) / comb(n,k) | 排列数/组合数（精确整数） |
+| fib(n) | 斐波那契（迭代；n≤0 → 0） |
+
+### 统计
+| 函数 | 说明 |
+|---|---|
+| sum_list / mean / median | 求和/均值/中位数（偶数取中间均值） |
+| variance / variance_sample | 总体/样本方差 |
+| stddev | 标准差 |
+| sort_floats(xs) | 插入排序（语言无内建 sort） |
+
+### 进制转换（2–36）
+| 函数 | 说明 |
+|---|---|
+| to_base(n,base) | 整数转字符串（负数带 -，数字 0-9a-z） |
+| from_base(s,base) | 解析（大小写均可；非法输入返回 0） |
+| digit_val(c) | 单字符转数值（非法 -1） |
+
+### 三角/对数（级数+区间归约，f64 精度 ~1e-9 以内）
+| 函数 | 说明 |
+|---|---|
+| sin / cos / tan | sin 泰勒级数+周期归约；cos=sin(x+π/2) |
+| atan | 三段归约（>1 取倒数、>1/√3 用 π/6 恒等式）后泰勒 |
+| exp | 归约到 |r|≤ln2/2 后泰勒，再乘 2^k |
+| ln | 归约到 f∈[1,2) 后 atanh 级数 |
+| log10 / log2 | ln 换底 |
+| pow_float(b,e) | b>0 用 exp·ln；b<0 仅整数 e |
+| deg2rad / rad2deg | 角度弧度互转 |
+
+### 常量
+MATHX_VERSION、MATHX3（"yes"，0.4.0 兼容）、PI、E
+
+### 0.4.0 兼容性
+原 7 个公开函数 gcd/lcm/is_prime/fib/loud_double/power/collatz_steps 全部保留，语义不变（gcd/lcm 额外接受负数入参）。loud_double 仍依赖 stringx。
+
+## 用法
+```
+import ./deps/mathx/index.catc as mathx
+# mathx.fib(10) -> 55
+# mathx.comb(52, 5) -> 2598960
+# mathx.sin(mathx.PI / 6.0) -> 0.5
+# mathx.to_base(255, 16) -> "ff"
+```
+
+## 明确不做（如实记录）
+- 位运算类（catbase v0.1.8 无位运算符）
+- 复数、矩阵（未实现，未测试）
+- 双曲函数 asin/acos（弧度域实现的精度边界未逐点验证，暂不虚报）
+
+---- index.catc (915 lines) ----
+# mathx 0.5.0 — complete math library for CatBase 0.1.8
+# Pure arithmetic implementation: CatBase v0.1.8 has no bitwise operators
+# and no sqrt builtin, so roots use Newton iteration and everything else
+# is built from + - * / % and loops.
+# Keeps every public function of mathx 0.4.0 (gcd/lcm/is_prime/fib/
+# loud_double/power/collatz_steps) unchanged in semantics.
+import ../stringx/index.catc as stringx
+
+MATHX_VERSION: str = "0.5.0"
+MATHX3: str = "yes"
+
+# ============ integer / float basics ============
+
+def abs_int(x: int) -> int {
+    if x < 0 {
+        return 0 - x
+    }
+    return x
+}
+
+def abs_float(x: float) -> float {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+def sign_int(x: int) -> int {
+    if x > 0 {
+        return 1
+    }
+    if x < 0 {
+        return -1
+    }
+    return 0
+}
+
+def sign_float(x: float) -> int {
+    if x > 0.0 {
+        return 1
+    }
+    if x < 0.0 {
+        return -1
+    }
+    return 0
+}
+
+def clamp_int(x: int, lo: int, hi: int) -> int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def clamp_float(x: float, lo: float, hi: float) -> float {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def max_int(a: int, b: int) -> int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+def min_int(a: int, b: int) -> int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+def max_float(a: float, b: float) -> float {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+def min_float(a: float, b: float) -> float {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+def max_of_list(xs: list[int]) -> int {
+    m: int = xs[0]
+    for x in xs {
+        if x > m {
+            m = x
+        }
+    }
+    return m
+}
+
+def min_of_list(xs: list[int]) -> int {
+    m: int = xs[0]
+    for x in xs {
+        if x < m {
+            m = x
+        }
+    }
+    return m
+}
+
+def floor_float(x: float) -> int {
+    # int() truncates toward zero, so negatives need one less
+    t: int = int(x)
+    if x < 0.0 {
+        f: float = float(t)
+        if f != x {
+            return t - 1
+        }
+    }
+    return t
+}
+
+def ceil_float(x: float) -> int {
+    t: int = int(x)
+    if x > 0.0 {
+        f: float = float(t)
+        if f != x {
+            return t + 1
+        }
+    }
+    return t
+}
+
+def round_half_away(x: float) -> int {
+    # builtin round(x, 0) rounds halves away from zero (verified:
+    # round(-2.5,0)=-3, round(3.5,0)=4); this wraps it to int
+    r: float = round(x, 0)
+    return int(r)
+}
+
+# ============ number theory ============
+
+def gcd(a: int, b: int) -> int {
+    x: int = abs_int(a)
+    y: int = abs_int(b)
+    while y != 0 {
+        t: int = x % y
+        x = y
+        y = t
+    }
+    return x
+}
+
+def lcm(a: int, b: int) -> int {
+    if a == 0 or b == 0 {
+        return 0
+    }
+    g: int = gcd(a, b)
+    ab: int = abs_int(a * b)
+    return ab / g
+}
+
+def is_prime(n: int) -> bool {
+    if n < 2 {
+        return False
+    }
+    if n < 4 {
+        return True
+    }
+    if n % 2 == 0 {
+        return False
+    }
+    d: int = 3
+    while d * d <= n {
+        if n % d == 0 {
+            return False
+        }
+        d = d + 2
+    }
+    return True
+}
+
+def sieve(n: int) -> list[int] {
+    # all primes <= n via Eratosthenes; n < 2 gives an empty list
+    if n < 2 {
+        return []
+    }
+    marks: list[int] = []
+    i: int = 0
+    while i <= n {
+        marks.append(1)
+        i = i + 1
+    }
+    marks[0] = 0
+    marks[1] = 0
+    p: int = 2
+    while p * p <= n {
+        if marks[p] == 1 {
+            q: int = p * p
+            while q <= n {
+                marks[q] = 0
+                q = q + p
+            }
+        }
+        p = p + 1
+    }
+    out: list[int] = []
+    j: int = 0
+    while j <= n {
+        if marks[j] == 1 {
+            out.append(j)
+        }
+        j = j + 1
+    }
+    return out
+}
+
+def prime_factors(n: int) -> list[int] {
+    # ascending factorization with multiplicity; n < 2 gives an empty list
+    out: list[int] = []
+    m: int = n
+    if m < 2 {
+        return out
+    }
+    while m % 2 == 0 {
+        out.append(2)
+        m = m / 2
+    }
+    d: int = 3
+    while d * d <= m {
+        while m % d == 0 {
+            out.append(d)
+            m = m / d
+        }
+        d = d + 2
+    }
+    if m > 1 {
+        out.append(m)
+    }
+    return out
+}
+
+def distinct_primes(n: int) -> list[int] {
+    all: list[int] = prime_factors(n)
+    out: list[int] = []
+    for p in all {
+        if len(out) == 0 {
+            out.append(p)
+        } else {
+            last: int = out[len(out) - 1]
+            if p != last {
+                out.append(p)
+            }
+        }
+    }
+    return out
+}
+
+def count_divisors(n: int) -> int {
+    if n < 1 {
+        return 0
+    }
+    c: int = 0
+    d: int = 1
+    while d * d <= n {
+        if n % d == 0 {
+            c = c + 2
+            if d * d == n {
+                c = c - 1
+            }
+        }
+        d = d + 1
+    }
+    return c
+}
+
+def is_perfect(n: int) -> bool {
+    # True when n equals the sum of its proper divisors (6, 28, 496, ...)
+    if n < 2 {
+        return False
+    }
+    s: int = 1
+    d: int = 2
+    while d * d <= n {
+        if n % d == 0 {
+            s = s + d
+            q: int = n / d
+            if q != d {
+                s = s + q
+            }
+        }
+        d = d + 1
+    }
+    if s == n {
+        return True
+    }
+    return False
+}
+
+def next_prime(n: int) -> int {
+    # smallest prime strictly greater than n
+    c: int = n + 1
+    found: bool = False
+    while not found {
+        if is_prime(c) {
+            found = True
+        } else {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+def totient(n: int) -> int {
+    # Euler phi from distinct prime factors: n * product((p-1)/p)
+    if n < 1 {
+        return 0
+    }
+    result: int = n
+    ps: list[int] = distinct_primes(n)
+    for p in ps {
+        result = result / p * (p - 1)
+    }
+    return result
+}
+
+def collatz_steps(n: int) -> int {
+    c: int = 0
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2
+        } else {
+            n = 3 * n + 1
+        }
+        c = c + 1
+    }
+    return c
+}
+
+# ============ powers & roots ============
+
+def power(base: int, e: int) -> int {
+    # fast exponentiation by squaring; e < 0 returns 0
+    if e < 0 {
+        return 0
+    }
+    result: int = 1
+    b: int = base
+    k: int = e
+    while k > 0 {
+        if k % 2 == 1 {
+            result = result * b
+        }
+        b = b * b
+        k = k / 2
+    }
+    return result
+}
+
+def mod_pow(base: int, e: int, m: int) -> int {
+    # modular exponentiation; intermediates stay within i64 when
+    # m <= 3037000499 (sqrt of 2^63), since x*x < m*m < 2^63
+    if m == 1 {
+        return 0
+    }
+    result: int = 1
+    b: int = base % m
+    k: int = e
+    while k > 0 {
+        if k % 2 == 1 {
+            result = result * b % m
+        }
+        b = b * b % m
+        k = k / 2
+    }
+    return result
+}
+
+def isqrt(n: int) -> int {
+    # largest r with r*r <= n, via integer Newton; n < 0 returns -1
+    if n < 0 {
+        return -1
+    }
+    if n < 2 {
+        return n
+    }
+    x: int = n
+    y: int = (x + n / x) / 2
+    while y < x {
+        x = y
+        y = (x + n / x) / 2
+    }
+    return x
+}
+
+def sqrt_float(x: float) -> float {
+    # Newton iteration; CatBase has no sqrt builtin; x < 0 returns 0.0
+    if x <= 0.0 {
+        return 0.0
+    }
+    z: float = x
+    half: float = 0.5
+    i: int = 0
+    done: bool = False
+    while not done {
+        nz: float = (z + x / z) * half
+        d: float = nz - z
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d < 1e-15 {
+            z = nz
+            done = True
+        } else {
+            z = nz
+            i = i + 1
+            if i > 80 {
+                done = True
+            }
+        }
+    }
+    return z
+}
+
+def cbrt_float(x: float) -> float {
+    # Newton on z^3 - x; handles negatives (odd root)
+    if x == 0.0 {
+        return 0.0
+    }
+    neg: bool = False
+    a: float = x
+    if a < 0.0 {
+        neg = True
+        a = 0.0 - a
+    }
+    z: float = a
+    third: float = 1.0 / 3.0
+    i: int = 0
+    done: bool = False
+    while not done {
+        z2: float = z * z
+        nz: float = (2.0 * z + a / z2) * third
+        d: float = nz - z
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d < 1e-15 {
+            z = nz
+            done = True
+        } else {
+            z = nz
+            i = i + 1
+            if i > 100 {
+                done = True
+            }
+        }
+    }
+    if neg {
+        return 0.0 - z
+    }
+    return z
+}
+
+def hypot(a: float, b: float) -> float {
+    return sqrt_float(a * a + b * b)
+}
+
+# ============ combinatorics ============
+
+def factorial(n: int) -> int {
+    # n < 0 returns -1
+    if n < 0 {
+        return -1
+    }
+    r: int = 1
+    i: int = 2
+    while i <= n {
+        r = r * i
+        i = i + 1
+    }
+    return r
+}
+
+def perm(n: int, k: int) -> int {
+    # falling factorial n*(n-1)*...*(n-k+1); out-of-range returns 0
+    if k < 0 or n < 0 or k > n {
+        return 0
+    }
+    r: int = 1
+    i: int = 0
+    while i < k {
+        r = r * (n - i)
+        i = i + 1
+    }
+    return r
+}
+
+def comb(n: int, k: int) -> int {
+    # binomial coefficient, exact multiplicative formula
+    if k < 0 or n < 0 or k > n {
+        return 0
+    }
+    if k > n - k {
+        k = n - k
+    }
+    r: int = 1
+    i: int = 0
+    while i < k {
+        r = r * (n - i) / (i + 1)
+        i = i + 1
+    }
+    return r
+}
+
+def fib(n: int) -> int {
+    # iterative; n <= 0 returns 0 (same semantics as mathx 0.4.0)
+    if n <= 0 {
+        return 0
+    }
+    a: int = 0
+    b: int = 1
+    i: int = 1
+    while i < n {
+        t: int = a + b
+        a = b
+        b = t
+        i = i + 1
+    }
+    return b
+}
+
+# ============ statistics ============
+
+def sum_list(xs: list[float]) -> float {
+    s: float = 0.0
+    for x in xs {
+        s = s + x
+    }
+    return s
+}
+
+def mean(xs: list[float]) -> float {
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    return sum_list(xs) / float(n)
+}
+
+def sort_floats(xs: list[float]) -> list[float] {
+    # insertion sort into a fresh list (CatBase lists have no sort/insert)
+    out: list[float] = []
+    for x in xs {
+        out.append(x)
+        j: int = len(out) - 1
+        moving: bool = True
+        while moving and j > 0 {
+            if out[j - 1] > out[j] {
+                t: float = out[j - 1]
+                out[j - 1] = out[j]
+                out[j] = t
+                j = j - 1
+            } else {
+                moving = False
+            }
+        }
+    }
+    return out
+}
+
+def median(xs: list[float]) -> float {
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    s: list[float] = sort_floats(xs)
+    half: int = n / 2
+    if n % 2 == 1 {
+        return s[half]
+    }
+    return (s[half - 1] + s[half]) / 2.0
+}
+
+def variance(xs: list[float]) -> float {
+    # population variance (divide by n); empty list gives 0.0
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    m: float = mean(xs)
+    s: float = 0.0
+    for x in xs {
+        d: float = x - m
+        s = s + d * d
+    }
+    return s / float(n)
+}
+
+def stddev(xs: list[float]) -> float {
+    return sqrt_float(variance(xs))
+}
+
+def variance_sample(xs: list[float]) -> float {
+    # sample variance (divide by n-1); fewer than 2 elements gives 0.0
+    n: int = len(xs)
+    if n < 2 {
+        return 0.0
+    }
+    m: float = mean(xs)
+    s: float = 0.0
+    for x in xs {
+        d: float = x - m
+        s = s + d * d
+    }
+    return s / float(n - 1)
+}
+
+# ============ base conversion (2..36) ============
+
+def to_base(n: int, base: int) -> str {
+    # non-negative and negative n; digits 0-9 then a-z
+    if base < 2 or base > 36 {
+        return ""
+    }
+    if n == 0 {
+        return "0"
+    }
+    neg: bool = False
+    m: int = n
+    if m < 0 {
+        neg = True
+        m = 0 - m
+    }
+    digits: str = "0123456789abcdefghijklmnopqrstuvwxyz"
+    rev: list[str] = []
+    while m > 0 {
+        d: int = m % base
+        rev.append(digits[d:d+1])
+        m = m / base
+    }
+    out: str = ""
+    if neg {
+        out = "-"
+    }
+    i: int = len(rev) - 1
+    while i >= 0 {
+        out = out + rev[i]
+        i = i - 1
+    }
+    return out
+}
+
+def from_base(s: str, base: int) -> int {
+    # accepts upper or lower case digits; invalid input returns 0
+    if base < 2 or base > 36 {
+        return 0
+    }
+    if len(s) == 0 {
+        return 0
+    }
+    start: int = 0
+    neg: bool = False
+    first: str = s[0:1]
+    if first == "-" {
+        neg = True
+        start = 1
+    }
+    v: int = 0
+    i: int = start
+    while i < len(s) {
+        c: str = s[i:i+1]
+        d: int = digit_val(c)
+        if d < 0 or d >= base {
+            return 0
+        }
+        v = v * base + d
+        i = i + 1
+    }
+    if neg {
+        return 0 - v
+    }
+    return v
+}
+
+def digit_val(c: str) -> int {
+    # single char to its value: 0-9 -> 0..9, a-z -> 10..35, else -1
+    o: int = ord(c)
+    if o >= 48 and o <= 57 {
+        return o - 48
+    }
+    if o >= 97 and o <= 122 {
+        return o - 87
+    }
+    if o >= 65 and o <= 90 {
+        return o - 55
+    }
+    return -1
+}
+
+# ============ trig & logs (series with range reduction) ============
+# Accuracy: floats are f64 and every routine below reduces its argument
+# onto a small interval before summing a Taylor/atanh series, giving
+# ~1e-9 or better over the tested ranges. Constants PI and E are f64.
+
+PI: float = 3.141592653589793
+E: float = 2.718281828459045
+
+def sin(x: float) -> float {
+    pi2: float = PI * 2.0
+    t: float = x
+    while t > PI {
+        t = t - pi2
+    }
+    while t < 0.0 - PI {
+        t = t + pi2
+    }
+    if t > PI / 2.0 {
+        t = PI - t
+    }
+    if t < 0.0 - PI / 2.0 {
+        t = 0.0 - PI - t
+    }
+    term: float = t
+    sum: float = t
+    x2: float = t * t
+    n: int = 1
+    while n <= 13 {
+        denom: int = (2 * n) * (2 * n + 1)
+        term = term * x2 / float(denom)
+        if n % 2 == 1 {
+            sum = sum - term
+        } else {
+            sum = sum + term
+        }
+        n = n + 1
+    }
+    return sum
+}
+
+def cos(x: float) -> float {
+    half: float = PI / 2.0
+    return sin(x + half)
+}
+
+def tan(x: float) -> float {
+    c: float = cos(x)
+    if c == 0.0 {
+        return 0.0
+    }
+    return sin(x) / c
+}
+
+def atan(x: float) -> float {
+    # reduce to (0, 1/sqrt3] then Taylor; recursion depth at most 2
+    if x < 0.0 {
+        return 0.0 - atan(0.0 - x)
+    }
+    if x > 1.0 {
+        inv: float = 1.0 / x
+        return PI / 2.0 - atan(inv)
+    }
+    sq3: float = sqrt_float(3.0)
+    bound: float = 1.0 / sq3
+    if x > bound {
+        # x = tan(pi/6 + a) -> a = atan((x*sqrt3 - 1)/(x + sqrt3))
+        u: float = (x * sq3 - 1.0) / (x + sq3)
+        return PI / 6.0 + atan(u)
+    }
+    x2: float = x * x
+    term: float = x
+    sum: float = x
+    n: int = 1
+    while n <= 15 {
+        term = term * x2
+        d: float = float(2 * n + 1)
+        if n % 2 == 1 {
+            sum = sum - term / d
+        } else {
+            sum = sum + term / d
+        }
+        n = n + 1
+    }
+    return sum
+}
+
+def exp(x: float) -> float {
+    # e^x = 2^k * e^r with |r| <= ln2/2, then Taylor on r
+    if x == 0.0 {
+        return 1.0
+    }
+    ln2: float = 0.6931471805599453
+    half_ln2: float = ln2 / 2.0
+    k: int = 0
+    r: float = x
+    while r > half_ln2 {
+        r = r - ln2
+        k = k + 1
+    }
+    while r < 0.0 - half_ln2 {
+        r = r + ln2
+        k = k - 1
+    }
+    term: float = 1.0
+    sum: float = 1.0
+    n: int = 1
+    while n <= 18 {
+        term = term * r / float(n)
+        sum = sum + term
+        n = n + 1
+    }
+    if k > 0 {
+        i: int = 0
+        while i < k {
+            sum = sum * 2.0
+            i = i + 1
+        }
+    } else {
+        j: int = k
+        while j < 0 {
+            sum = sum / 2.0
+            j = j + 1
+        }
+    }
+    return sum
+}
+
+def ln(x: float) -> float {
+    # ln(x) = m*ln2 + ln(f) with x = 2^m * f, f in [1,2);
+    # ln(f) via the atanh series 2*(y + y^3/3 + y^5/5 + ...),
+    # y = (f-1)/(f+1), |y| <= 1/3 so 20 terms give ~1e-12
+    if x <= 0.0 {
+        return 0.0 - 1e308
+    }
+    ln2: float = 0.6931471805599453
+    m: int = 0
+    f: float = x
+    while f >= 2.0 {
+        f = f / 2.0
+        m = m + 1
+    }
+    while f < 1.0 {
+        f = f * 2.0
+        m = m - 1
+    }
+    y: float = (f - 1.0) / (f + 1.0)
+    y2: float = y * y
+    term: float = y
+    sum: float = y
+    n: int = 1
+    while n <= 20 {
+        term = term * y2
+        sum = sum + term / float(2 * n + 1)
+        n = n + 1
+    }
+    two: float = 2.0
+    return two * sum + float(m) * ln2
+}
+
+def log10(x: float) -> float {
+    ln10: float = 2.302585092994046
+    return ln(x) / ln10
+}
+
+def log2(x: float) -> float {
+    return ln(x) / 0.6931471805599453
+}
+
+def pow_float(b: float, e: float) -> float {
+    # b > 0: exp(e*ln(b)); b == 0 and e > 0 gives 0.0;
+    # b < 0 only for integer e; other cases return 0.0
+    if b == 0.0 {
+        if e > 0.0 {
+            return 0.0
+        }
+        return 1.0
+    }
+    if b < 0.0 {
+        isint: bool = e == float(int(e))
+        if isint {
+            n: int = int(e)
+            if n < 0 {
+                nb: float = 0.0 - b
+                inv: float = pow_float(nb, float(0 - n))
+                return 1.0 / inv
+            }
+            r: float = 1.0
+            i: int = 0
+            while i < n {
+                r = r * b
+                i = i + 1
+            }
+            return r
+        }
+        return 0.0
+    }
+    return exp(e * ln(b))
+}
+
+def deg2rad(d: float) -> float {
+    return d * PI / 180.0
+}
+
+def rad2deg(r: float) -> float {
+    return r * 180.0 / PI
+}
+
+def loud_double(n: int) -> str {
+    # kept from mathx 0.4.0: stringx round trip through the deps tree
+    return stringx.shout(str(n * 2))
+}

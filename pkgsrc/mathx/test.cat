@@ -1,0 +1,1178 @@
+# mathx 0.5.0 — complete math library for CatBase 0.1.8
+# Pure arithmetic implementation: CatBase v0.1.8 has no bitwise operators
+# and no sqrt builtin, so roots use Newton iteration and everything else
+# is built from + - * / % and loops.
+# Keeps every public function of mathx 0.4.0 (gcd/lcm/is_prime/fib/
+# loud_double/power/collatz_steps) unchanged in semantics.
+import ./deps/stringx/index.catc as stringx
+
+MATHX_VERSION: str = "0.5.0"
+MATHX3: str = "yes"
+
+# ============ integer / float basics ============
+
+def abs_int(x: int) -> int {
+    if x < 0 {
+        return 0 - x
+    }
+    return x
+}
+
+def abs_float(x: float) -> float {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+def sign_int(x: int) -> int {
+    if x > 0 {
+        return 1
+    }
+    if x < 0 {
+        return -1
+    }
+    return 0
+}
+
+def sign_float(x: float) -> int {
+    if x > 0.0 {
+        return 1
+    }
+    if x < 0.0 {
+        return -1
+    }
+    return 0
+}
+
+def clamp_int(x: int, lo: int, hi: int) -> int {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def clamp_float(x: float, lo: float, hi: float) -> float {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+def max_int(a: int, b: int) -> int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+def min_int(a: int, b: int) -> int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+def max_float(a: float, b: float) -> float {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+def min_float(a: float, b: float) -> float {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+def max_of_list(xs: list[int]) -> int {
+    m: int = xs[0]
+    for x in xs {
+        if x > m {
+            m = x
+        }
+    }
+    return m
+}
+
+def min_of_list(xs: list[int]) -> int {
+    m: int = xs[0]
+    for x in xs {
+        if x < m {
+            m = x
+        }
+    }
+    return m
+}
+
+def floor_float(x: float) -> int {
+    # int() truncates toward zero, so negatives need one less
+    t: int = int(x)
+    if x < 0.0 {
+        f: float = float(t)
+        if f != x {
+            return t - 1
+        }
+    }
+    return t
+}
+
+def ceil_float(x: float) -> int {
+    t: int = int(x)
+    if x > 0.0 {
+        f: float = float(t)
+        if f != x {
+            return t + 1
+        }
+    }
+    return t
+}
+
+def round_half_away(x: float) -> int {
+    # builtin round(x, 0) rounds halves away from zero (verified:
+    # round(-2.5,0)=-3, round(3.5,0)=4); this wraps it to int
+    r: float = round(x, 0)
+    return int(r)
+}
+
+# ============ number theory ============
+
+def gcd(a: int, b: int) -> int {
+    x: int = abs_int(a)
+    y: int = abs_int(b)
+    while y != 0 {
+        t: int = x % y
+        x = y
+        y = t
+    }
+    return x
+}
+
+def lcm(a: int, b: int) -> int {
+    if a == 0 or b == 0 {
+        return 0
+    }
+    g: int = gcd(a, b)
+    ab: int = abs_int(a * b)
+    return ab / g
+}
+
+def is_prime(n: int) -> bool {
+    if n < 2 {
+        return False
+    }
+    if n < 4 {
+        return True
+    }
+    if n % 2 == 0 {
+        return False
+    }
+    d: int = 3
+    while d * d <= n {
+        if n % d == 0 {
+            return False
+        }
+        d = d + 2
+    }
+    return True
+}
+
+def sieve(n: int) -> list[int] {
+    # all primes <= n via Eratosthenes; n < 2 gives an empty list
+    if n < 2 {
+        return []
+    }
+    marks: list[int] = []
+    i: int = 0
+    while i <= n {
+        marks.append(1)
+        i = i + 1
+    }
+    marks[0] = 0
+    marks[1] = 0
+    p: int = 2
+    while p * p <= n {
+        if marks[p] == 1 {
+            q: int = p * p
+            while q <= n {
+                marks[q] = 0
+                q = q + p
+            }
+        }
+        p = p + 1
+    }
+    out: list[int] = []
+    j: int = 0
+    while j <= n {
+        if marks[j] == 1 {
+            out.append(j)
+        }
+        j = j + 1
+    }
+    return out
+}
+
+def prime_factors(n: int) -> list[int] {
+    # ascending factorization with multiplicity; n < 2 gives an empty list
+    out: list[int] = []
+    m: int = n
+    if m < 2 {
+        return out
+    }
+    while m % 2 == 0 {
+        out.append(2)
+        m = m / 2
+    }
+    d: int = 3
+    while d * d <= m {
+        while m % d == 0 {
+            out.append(d)
+            m = m / d
+        }
+        d = d + 2
+    }
+    if m > 1 {
+        out.append(m)
+    }
+    return out
+}
+
+def distinct_primes(n: int) -> list[int] {
+    all: list[int] = prime_factors(n)
+    out: list[int] = []
+    for p in all {
+        if len(out) == 0 {
+            out.append(p)
+        } else {
+            last: int = out[len(out) - 1]
+            if p != last {
+                out.append(p)
+            }
+        }
+    }
+    return out
+}
+
+def count_divisors(n: int) -> int {
+    if n < 1 {
+        return 0
+    }
+    c: int = 0
+    d: int = 1
+    while d * d <= n {
+        if n % d == 0 {
+            c = c + 2
+            if d * d == n {
+                c = c - 1
+            }
+        }
+        d = d + 1
+    }
+    return c
+}
+
+def is_perfect(n: int) -> bool {
+    # True when n equals the sum of its proper divisors (6, 28, 496, ...)
+    if n < 2 {
+        return False
+    }
+    s: int = 1
+    d: int = 2
+    while d * d <= n {
+        if n % d == 0 {
+            s = s + d
+            q: int = n / d
+            if q != d {
+                s = s + q
+            }
+        }
+        d = d + 1
+    }
+    if s == n {
+        return True
+    }
+    return False
+}
+
+def next_prime(n: int) -> int {
+    # smallest prime strictly greater than n
+    c: int = n + 1
+    found: bool = False
+    while not found {
+        if is_prime(c) {
+            found = True
+        } else {
+            c = c + 1
+        }
+    }
+    return c
+}
+
+def totient(n: int) -> int {
+    # Euler phi from distinct prime factors: n * product((p-1)/p)
+    if n < 1 {
+        return 0
+    }
+    result: int = n
+    ps: list[int] = distinct_primes(n)
+    for p in ps {
+        result = result / p * (p - 1)
+    }
+    return result
+}
+
+def collatz_steps(n: int) -> int {
+    c: int = 0
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2
+        } else {
+            n = 3 * n + 1
+        }
+        c = c + 1
+    }
+    return c
+}
+
+# ============ powers & roots ============
+
+def power(base: int, e: int) -> int {
+    # fast exponentiation by squaring; e < 0 returns 0
+    if e < 0 {
+        return 0
+    }
+    result: int = 1
+    b: int = base
+    k: int = e
+    while k > 0 {
+        if k % 2 == 1 {
+            result = result * b
+        }
+        b = b * b
+        k = k / 2
+    }
+    return result
+}
+
+def mod_pow(base: int, e: int, m: int) -> int {
+    # modular exponentiation; intermediates stay within i64 when
+    # m <= 3037000499 (sqrt of 2^63), since x*x < m*m < 2^63
+    if m == 1 {
+        return 0
+    }
+    result: int = 1
+    b: int = base % m
+    k: int = e
+    while k > 0 {
+        if k % 2 == 1 {
+            result = result * b % m
+        }
+        b = b * b % m
+        k = k / 2
+    }
+    return result
+}
+
+def isqrt(n: int) -> int {
+    # largest r with r*r <= n, via integer Newton; n < 0 returns -1
+    if n < 0 {
+        return -1
+    }
+    if n < 2 {
+        return n
+    }
+    x: int = n
+    y: int = (x + n / x) / 2
+    while y < x {
+        x = y
+        y = (x + n / x) / 2
+    }
+    return x
+}
+
+def sqrt_float(x: float) -> float {
+    # Newton iteration; CatBase has no sqrt builtin; x < 0 returns 0.0
+    if x <= 0.0 {
+        return 0.0
+    }
+    z: float = x
+    half: float = 0.5
+    i: int = 0
+    done: bool = False
+    while not done {
+        nz: float = (z + x / z) * half
+        d: float = nz - z
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d < 1e-15 {
+            z = nz
+            done = True
+        } else {
+            z = nz
+            i = i + 1
+            if i > 80 {
+                done = True
+            }
+        }
+    }
+    return z
+}
+
+def cbrt_float(x: float) -> float {
+    # Newton on z^3 - x; handles negatives (odd root)
+    if x == 0.0 {
+        return 0.0
+    }
+    neg: bool = False
+    a: float = x
+    if a < 0.0 {
+        neg = True
+        a = 0.0 - a
+    }
+    z: float = a
+    third: float = 1.0 / 3.0
+    i: int = 0
+    done: bool = False
+    while not done {
+        z2: float = z * z
+        nz: float = (2.0 * z + a / z2) * third
+        d: float = nz - z
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d < 1e-15 {
+            z = nz
+            done = True
+        } else {
+            z = nz
+            i = i + 1
+            if i > 100 {
+                done = True
+            }
+        }
+    }
+    if neg {
+        return 0.0 - z
+    }
+    return z
+}
+
+def hypot(a: float, b: float) -> float {
+    return sqrt_float(a * a + b * b)
+}
+
+# ============ combinatorics ============
+
+def factorial(n: int) -> int {
+    # n < 0 returns -1
+    if n < 0 {
+        return -1
+    }
+    r: int = 1
+    i: int = 2
+    while i <= n {
+        r = r * i
+        i = i + 1
+    }
+    return r
+}
+
+def perm(n: int, k: int) -> int {
+    # falling factorial n*(n-1)*...*(n-k+1); out-of-range returns 0
+    if k < 0 or n < 0 or k > n {
+        return 0
+    }
+    r: int = 1
+    i: int = 0
+    while i < k {
+        r = r * (n - i)
+        i = i + 1
+    }
+    return r
+}
+
+def comb(n: int, k: int) -> int {
+    # binomial coefficient, exact multiplicative formula
+    if k < 0 or n < 0 or k > n {
+        return 0
+    }
+    if k > n - k {
+        k = n - k
+    }
+    r: int = 1
+    i: int = 0
+    while i < k {
+        r = r * (n - i) / (i + 1)
+        i = i + 1
+    }
+    return r
+}
+
+def fib(n: int) -> int {
+    # iterative; n <= 0 returns 0 (same semantics as mathx 0.4.0)
+    if n <= 0 {
+        return 0
+    }
+    a: int = 0
+    b: int = 1
+    i: int = 1
+    while i < n {
+        t: int = a + b
+        a = b
+        b = t
+        i = i + 1
+    }
+    return b
+}
+
+# ============ statistics ============
+
+def sum_list(xs: list[float]) -> float {
+    s: float = 0.0
+    for x in xs {
+        s = s + x
+    }
+    return s
+}
+
+def mean(xs: list[float]) -> float {
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    return sum_list(xs) / float(n)
+}
+
+def sort_floats(xs: list[float]) -> list[float] {
+    # insertion sort into a fresh list (CatBase lists have no sort/insert)
+    out: list[float] = []
+    for x in xs {
+        out.append(x)
+        j: int = len(out) - 1
+        moving: bool = True
+        while moving and j > 0 {
+            if out[j - 1] > out[j] {
+                t: float = out[j - 1]
+                out[j - 1] = out[j]
+                out[j] = t
+                j = j - 1
+            } else {
+                moving = False
+            }
+        }
+    }
+    return out
+}
+
+def median(xs: list[float]) -> float {
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    s: list[float] = sort_floats(xs)
+    half: int = n / 2
+    if n % 2 == 1 {
+        return s[half]
+    }
+    return (s[half - 1] + s[half]) / 2.0
+}
+
+def variance(xs: list[float]) -> float {
+    # population variance (divide by n); empty list gives 0.0
+    n: int = len(xs)
+    if n == 0 {
+        return 0.0
+    }
+    m: float = mean(xs)
+    s: float = 0.0
+    for x in xs {
+        d: float = x - m
+        s = s + d * d
+    }
+    return s / float(n)
+}
+
+def stddev(xs: list[float]) -> float {
+    return sqrt_float(variance(xs))
+}
+
+def variance_sample(xs: list[float]) -> float {
+    # sample variance (divide by n-1); fewer than 2 elements gives 0.0
+    n: int = len(xs)
+    if n < 2 {
+        return 0.0
+    }
+    m: float = mean(xs)
+    s: float = 0.0
+    for x in xs {
+        d: float = x - m
+        s = s + d * d
+    }
+    return s / float(n - 1)
+}
+
+# ============ base conversion (2..36) ============
+
+def to_base(n: int, base: int) -> str {
+    # non-negative and negative n; digits 0-9 then a-z
+    if base < 2 or base > 36 {
+        return ""
+    }
+    if n == 0 {
+        return "0"
+    }
+    neg: bool = False
+    m: int = n
+    if m < 0 {
+        neg = True
+        m = 0 - m
+    }
+    digits: str = "0123456789abcdefghijklmnopqrstuvwxyz"
+    rev: list[str] = []
+    while m > 0 {
+        d: int = m % base
+        rev.append(digits[d:d+1])
+        m = m / base
+    }
+    out: str = ""
+    if neg {
+        out = "-"
+    }
+    i: int = len(rev) - 1
+    while i >= 0 {
+        out = out + rev[i]
+        i = i - 1
+    }
+    return out
+}
+
+def from_base(s: str, base: int) -> int {
+    # accepts upper or lower case digits; invalid input returns 0
+    if base < 2 or base > 36 {
+        return 0
+    }
+    if len(s) == 0 {
+        return 0
+    }
+    start: int = 0
+    neg: bool = False
+    first: str = s[0:1]
+    if first == "-" {
+        neg = True
+        start = 1
+    }
+    v: int = 0
+    i: int = start
+    while i < len(s) {
+        c: str = s[i:i+1]
+        d: int = digit_val(c)
+        if d < 0 or d >= base {
+            return 0
+        }
+        v = v * base + d
+        i = i + 1
+    }
+    if neg {
+        return 0 - v
+    }
+    return v
+}
+
+def digit_val(c: str) -> int {
+    # single char to its value: 0-9 -> 0..9, a-z -> 10..35, else -1
+    o: int = ord(c)
+    if o >= 48 and o <= 57 {
+        return o - 48
+    }
+    if o >= 97 and o <= 122 {
+        return o - 87
+    }
+    if o >= 65 and o <= 90 {
+        return o - 55
+    }
+    return -1
+}
+
+# ============ trig & logs (series with range reduction) ============
+# Accuracy: floats are f64 and every routine below reduces its argument
+# onto a small interval before summing a Taylor/atanh series, giving
+# ~1e-9 or better over the tested ranges. Constants PI and E are f64.
+
+PI: float = 3.141592653589793
+E: float = 2.718281828459045
+
+def sin(x: float) -> float {
+    pi2: float = PI * 2.0
+    t: float = x
+    while t > PI {
+        t = t - pi2
+    }
+    while t < 0.0 - PI {
+        t = t + pi2
+    }
+    if t > PI / 2.0 {
+        t = PI - t
+    }
+    if t < 0.0 - PI / 2.0 {
+        t = 0.0 - PI - t
+    }
+    term: float = t
+    sum: float = t
+    x2: float = t * t
+    n: int = 1
+    while n <= 13 {
+        denom: int = (2 * n) * (2 * n + 1)
+        term = term * x2 / float(denom)
+        if n % 2 == 1 {
+            sum = sum - term
+        } else {
+            sum = sum + term
+        }
+        n = n + 1
+    }
+    return sum
+}
+
+def cos(x: float) -> float {
+    half: float = PI / 2.0
+    return sin(x + half)
+}
+
+def tan(x: float) -> float {
+    c: float = cos(x)
+    if c == 0.0 {
+        return 0.0
+    }
+    return sin(x) / c
+}
+
+def atan(x: float) -> float {
+    # reduce to (0, 1/sqrt3] then Taylor; recursion depth at most 2
+    if x < 0.0 {
+        return 0.0 - atan(0.0 - x)
+    }
+    if x > 1.0 {
+        inv: float = 1.0 / x
+        return PI / 2.0 - atan(inv)
+    }
+    sq3: float = sqrt_float(3.0)
+    bound: float = 1.0 / sq3
+    if x > bound {
+        # x = tan(pi/6 + a) -> a = atan((x*sqrt3 - 1)/(x + sqrt3))
+        u: float = (x * sq3 - 1.0) / (x + sq3)
+        return PI / 6.0 + atan(u)
+    }
+    x2: float = x * x
+    term: float = x
+    sum: float = x
+    n: int = 1
+    while n <= 15 {
+        term = term * x2
+        d: float = float(2 * n + 1)
+        if n % 2 == 1 {
+            sum = sum - term / d
+        } else {
+            sum = sum + term / d
+        }
+        n = n + 1
+    }
+    return sum
+}
+
+def exp(x: float) -> float {
+    # e^x = 2^k * e^r with |r| <= ln2/2, then Taylor on r
+    if x == 0.0 {
+        return 1.0
+    }
+    ln2: float = 0.6931471805599453
+    half_ln2: float = ln2 / 2.0
+    k: int = 0
+    r: float = x
+    while r > half_ln2 {
+        r = r - ln2
+        k = k + 1
+    }
+    while r < 0.0 - half_ln2 {
+        r = r + ln2
+        k = k - 1
+    }
+    term: float = 1.0
+    sum: float = 1.0
+    n: int = 1
+    while n <= 18 {
+        term = term * r / float(n)
+        sum = sum + term
+        n = n + 1
+    }
+    if k > 0 {
+        i: int = 0
+        while i < k {
+            sum = sum * 2.0
+            i = i + 1
+        }
+    } else {
+        j: int = k
+        while j < 0 {
+            sum = sum / 2.0
+            j = j + 1
+        }
+    }
+    return sum
+}
+
+def ln(x: float) -> float {
+    # ln(x) = m*ln2 + ln(f) with x = 2^m * f, f in [1,2);
+    # ln(f) via the atanh series 2*(y + y^3/3 + y^5/5 + ...),
+    # y = (f-1)/(f+1), |y| <= 1/3 so 20 terms give ~1e-12
+    if x <= 0.0 {
+        return 0.0 - 1e308
+    }
+    ln2: float = 0.6931471805599453
+    m: int = 0
+    f: float = x
+    while f >= 2.0 {
+        f = f / 2.0
+        m = m + 1
+    }
+    while f < 1.0 {
+        f = f * 2.0
+        m = m - 1
+    }
+    y: float = (f - 1.0) / (f + 1.0)
+    y2: float = y * y
+    term: float = y
+    sum: float = y
+    n: int = 1
+    while n <= 20 {
+        term = term * y2
+        sum = sum + term / float(2 * n + 1)
+        n = n + 1
+    }
+    two: float = 2.0
+    return two * sum + float(m) * ln2
+}
+
+def log10(x: float) -> float {
+    ln10: float = 2.302585092994046
+    return ln(x) / ln10
+}
+
+def log2(x: float) -> float {
+    return ln(x) / 0.6931471805599453
+}
+
+def pow_float(b: float, e: float) -> float {
+    # b > 0: exp(e*ln(b)); b == 0 and e > 0 gives 0.0;
+    # b < 0 only for integer e; other cases return 0.0
+    if b == 0.0 {
+        if e > 0.0 {
+            return 0.0
+        }
+        return 1.0
+    }
+    if b < 0.0 {
+        isint: bool = e == float(int(e))
+        if isint {
+            n: int = int(e)
+            if n < 0 {
+                nb: float = 0.0 - b
+                inv: float = pow_float(nb, float(0 - n))
+                return 1.0 / inv
+            }
+            r: float = 1.0
+            i: int = 0
+            while i < n {
+                r = r * b
+                i = i + 1
+            }
+            return r
+        }
+        return 0.0
+    }
+    return exp(e * ln(b))
+}
+
+def deg2rad(d: float) -> float {
+    return d * PI / 180.0
+}
+
+def rad2deg(r: float) -> float {
+    return r * 180.0 / PI
+}
+
+def loud_double(n: int) -> str {
+    # kept from mathx 0.4.0: stringx round trip through the deps tree
+    return stringx.shout(str(n * 2))
+}
+
+# --- test harness appended; test.cat is NOT part of the cpkg ---
+
+# ============ test harness ============
+
+def expect_i(label: str, got: int, want: int) -> int {
+    if got != want {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+def expect_f(label: str, got: float, want: float) -> int {
+    d: float = got - want
+    if d < 0.0 {
+        d = 0.0 - d
+    }
+    tol: float = 1e-9
+    if d > tol {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+def expect_s(label: str, got: str, want: str) -> int {
+    if got != want {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+def expect_b(label: str, got: bool, want: bool) -> int {
+    if got != want {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+def cat_list_int(xs: list[int]) -> str {
+    out: str = ""
+    for x in xs {
+        if len(out) > 0 {
+            out = out + " "
+        }
+        out = out + str(x)
+    }
+    return out
+}
+
+def main(args: list[str]) {
+    bad: int = 0
+
+    # ---- 0.4.0 compatibility surface ----
+    bad = bad + expect_i("fib 10", fib(10), 55)
+    bad = bad + expect_i("fib 0", fib(0), 0)
+    bad = bad + expect_i("fib 1", fib(1), 1)
+    bad = bad + expect_i("fib 50", fib(50), 12586269025)
+    bad = bad + expect_i("gcd 12 18", gcd(12, 18), 6)
+    bad = bad + expect_i("lcm 4 6", lcm(4, 6), 12)
+    bad = bad + expect_b("is_prime 97", is_prime(97), True)
+    bad = bad + expect_b("is_prime 91", is_prime(91), False)
+    bad = bad + expect_i("power 2^10", power(2, 10), 1024)
+    bad = bad + expect_s("loud_double 21", loud_double(21), "42!")
+    bad = bad + expect_i("collatz 27", collatz_steps(27), 111)
+    bad = bad + expect_i("collatz 1", collatz_steps(1), 0)
+    bad = bad + expect_s("MATHX3", MATHX3, "yes")
+    bad = bad + expect_s("VERSION", MATHX_VERSION, "0.5.0")
+
+    # ---- basics ----
+    bad = bad + expect_i("abs_int -7", abs_int(-7), 7)
+    bad = bad + expect_i("abs_int 0", abs_int(0), 0)
+    bad = bad + expect_i("sign_int -3", sign_int(-3), -1)
+    bad = bad + expect_i("sign_int 0", sign_int(0), 0)
+    bad = bad + expect_i("sign_int 5", sign_int(5), 1)
+    bad = bad + expect_i("sign_float -0.5", sign_float(-0.5), -1)
+    bad = bad + expect_f("abs_float -2.5", abs_float(-2.5), 2.5)
+    bad = bad + expect_i("clamp high", clamp_int(15, 0, 10), 10)
+    bad = bad + expect_i("clamp low", clamp_int(-3, 0, 10), 0)
+    bad = bad + expect_i("clamp mid", clamp_int(5, 0, 10), 5)
+    bad = bad + expect_f("clamp_f high", clamp_float(15.5, 0.0, 10.0), 10.0)
+    bad = bad + expect_i("max_int", max_int(3, 9), 9)
+    bad = bad + expect_i("min_int", min_int(3, 9), 3)
+    bad = bad + expect_f("max_float", max_float(3.5, 9.1), 9.1)
+    bad = bad + expect_f("min_float", min_float(3.5, 9.1), 3.5)
+    ls: list[int] = [3, -2, 10, 7]
+    bad = bad + expect_i("max_of_list", max_of_list(ls), 10)
+    bad = bad + expect_i("min_of_list", min_of_list(ls), -2)
+
+    # ---- floor/ceil/round ----
+    bad = bad + expect_i("floor 2.7", floor_float(2.7), 2)
+    bad = bad + expect_i("floor -2.3", floor_float(-2.3), -3)
+    bad = bad + expect_i("floor -2.0", floor_float(-2.0), -2)
+    bad = bad + expect_i("ceil 2.3", ceil_float(2.3), 3)
+    bad = bad + expect_i("ceil -2.7", ceil_float(-2.7), -2)
+    bad = bad + expect_i("ceil 2.0", ceil_float(2.0), 2)
+    bad = bad + expect_i("rha 2.5", round_half_away(2.5), 3)
+    bad = bad + expect_i("rha -2.5", round_half_away(-2.5), -3)
+    bad = bad + expect_i("rha 2.4", round_half_away(2.4), 2)
+
+    # ---- number theory ----
+    bad = bad + expect_i("gcd -12 18", gcd(-12, 18), 6)
+    bad = bad + expect_i("gcd 7 0", gcd(7, 0), 7)
+    bad = bad + expect_i("lcm 0 5", lcm(0, 5), 0)
+    bad = bad + expect_b("is_prime 2", is_prime(2), True)
+    bad = bad + expect_b("is_prime 1", is_prime(1), False)
+    bad = bad + expect_b("is_prime -5", is_prime(-5), False)
+    bad = bad + expect_b("is_prime 7919", is_prime(7919), True)
+    bad = bad + expect_b("is_prime 7917", is_prime(7917), False)
+    bad = bad + expect_i("next_prime 10", next_prime(10), 11)
+    bad = bad + expect_i("next_prime 13", next_prime(13), 17)
+    ps: list[int] = sieve(30)
+    bad = bad + expect_s("sieve 30", cat_list_int(ps), "2 3 5 7 11 13 17 19 23 29")
+    ps2: list[int] = sieve(1)
+    bad = bad + expect_i("sieve 1 len", len(ps2), 0)
+    ps3: list[int] = sieve(100)
+    bad = bad + expect_i("sieve 100 count", len(ps3), 25)
+    pf: list[int] = prime_factors(360)
+    bad = bad + expect_s("pf 360", cat_list_int(pf), "2 2 2 3 3 5")
+    pf2: list[int] = prime_factors(97)
+    bad = bad + expect_s("pf 97", cat_list_int(pf2), "97")
+    pf3: list[int] = prime_factors(1)
+    bad = bad + expect_i("pf 1 len", len(pf3), 0)
+    pf4: list[int] = prime_factors(1024)
+    bad = bad + expect_s("pf 1024", cat_list_int(pf4), "2 2 2 2 2 2 2 2 2 2")
+    dp: list[int] = distinct_primes(360)
+    bad = bad + expect_s("distinct 360", cat_list_int(dp), "2 3 5")
+    bad = bad + expect_i("count_divisors 36", count_divisors(36), 9)
+    bad = bad + expect_i("count_divisors 97", count_divisors(97), 2)
+    bad = bad + expect_i("count_divisors 1", count_divisors(1), 1)
+    bad = bad + expect_b("is_perfect 6", is_perfect(6), True)
+    bad = bad + expect_b("is_perfect 28", is_perfect(28), True)
+    bad = bad + expect_b("is_perfect 96", is_perfect(96), False)
+    bad = bad + expect_b("is_perfect 496", is_perfect(496), True)
+    bad = bad + expect_b("is_perfect 27", is_perfect(27), False)
+    bad = bad + expect_i("totient 36", totient(36), 12)
+    bad = bad + expect_i("totient 97", totient(97), 96)
+    bad = bad + expect_i("totient 1", totient(1), 1)
+    bad = bad + expect_i("totient 100", totient(100), 40)
+
+    # ---- powers & roots ----
+    bad = bad + expect_i("power 3^0", power(3, 0), 1)
+    bad = bad + expect_i("power 5^3", power(5, 3), 125)
+    bad = bad + expect_i("power neg exp", power(2, -3), 0)
+    bad = bad + expect_i("mod_pow 2^10 mod 1000", mod_pow(2, 10, 1000), 24)
+    bad = bad + expect_i("mod_pow 3^200 mod 50", mod_pow(3, 200, 50), 1)
+    bad = bad + expect_i("mod_pow 7^0 mod 5", mod_pow(7, 0, 5), 1)
+    bad = bad + expect_i("isqrt 17", isqrt(17), 4)
+    bad = bad + expect_i("isqrt 16", isqrt(16), 4)
+    bad = bad + expect_i("isqrt 0", isqrt(0), 0)
+    bad = bad + expect_i("isqrt 99", isqrt(99), 9)
+    bad = bad + expect_i("isqrt 10^12", isqrt(1000000000000), 1000000)
+    bad = bad + expect_i("isqrt neg", isqrt(-4), -1)
+    bad = bad + expect_f("sqrt 2", sqrt_float(2.0), 1.4142135623730951)
+    bad = bad + expect_f("sqrt 9", sqrt_float(9.0), 3.0)
+    bad = bad + expect_f("sqrt 0.25", sqrt_float(0.25), 0.5)
+    bad = bad + expect_f("sqrt 0", sqrt_float(0.0), 0.0)
+    bad = bad + expect_f("cbrt 27", cbrt_float(27.0), 3.0)
+    bad = bad + expect_f("cbrt -8", cbrt_float(-8.0), -2.0)
+    bad = bad + expect_f("cbrt 2", cbrt_float(2.0), 1.2599210498948732)
+    bad = bad + expect_f("hypot 3 4", hypot(3.0, 4.0), 5.0)
+    bad = bad + expect_f("hypot 5 12", hypot(5.0, 12.0), 13.0)
+
+    # ---- combinatorics ----
+    bad = bad + expect_i("factorial 0", factorial(0), 1)
+    bad = bad + expect_i("factorial 5", factorial(5), 120)
+    bad = bad + expect_i("factorial 10", factorial(10), 3628800)
+    bad = bad + expect_i("factorial -1", factorial(-1), -1)
+    bad = bad + expect_i("perm 5 2", perm(5, 2), 20)
+    bad = bad + expect_i("perm 10 3", perm(10, 3), 720)
+    bad = bad + expect_i("perm out-of-range", perm(5, 6), 0)
+    bad = bad + expect_i("comb 5 2", comb(5, 2), 10)
+    bad = bad + expect_i("comb 10 5", comb(10, 5), 252)
+    bad = bad + expect_i("comb 52 5", comb(52, 5), 2598960)
+    bad = bad + expect_i("comb out-of-range", comb(3, 5), 0)
+    bad = bad + expect_i("comb 20 10", comb(20, 10), 184756)
+
+    # ---- statistics ----
+    xs1: list[float] = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]
+    bad = bad + expect_f("mean", mean(xs1), 5.0)
+    bad = bad + expect_f("median even", median(xs1), 4.5)
+    xs2: list[float] = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0]
+    bad = bad + expect_f("median odd", median(xs2), 4.0)
+    bad = bad + expect_f("variance pop", variance(xs1), 4.0)
+    bad = bad + expect_f("stddev", stddev(xs1), 2.0)
+    bad = bad + expect_f("variance sample", variance_sample(xs1), 4.571428571428571)
+    xs3: list[float] = [1.0]
+    bad = bad + expect_f("mean single", mean(xs3), 1.0)
+    bad = bad + expect_f("variance single", variance(xs3), 0.0)
+    bad = bad + expect_f("vsample single", variance_sample(xs3), 0.0)
+    srt: list[float] = [3.0, 1.0, 2.0]
+    bad = bad + expect_f("sort mid", sort_floats(srt)[1], 2.0)
+
+    # ---- base conversion ----
+    bad = bad + expect_s("to_base 255 16", to_base(255, 16), "ff")
+    bad = bad + expect_s("to_base 255 2", to_base(255, 2), "11111111")
+    bad = bad + expect_s("to_base 0 16", to_base(0, 16), "0")
+    bad = bad + expect_s("to_base 35 36", to_base(35, 36), "z")
+    bad = bad + expect_s("to_base 33445566 36", to_base(33445566, 36), "jwuri")
+    bad = bad + expect_s("to_base -255 16", to_base(-255, 16), "-ff")
+    bad = bad + expect_s("to_base bad base", to_base(10, 37), "")
+    bad = bad + expect_i("from_base ff 16", from_base("ff", 16), 255)
+    bad = bad + expect_i("from_base FF 16", from_base("FF", 16), 255)
+    bad = bad + expect_i("from_base bin", from_base("11111111", 2), 255)
+    bad = bad + expect_i("from_base z 36", from_base("z", 36), 35)
+    bad = bad + expect_i("from_base bad char", from_base("g8", 16), 0)
+    bad = bad + expect_i("from_base empty", from_base("", 16), 0)
+    bad = bad + expect_i("roundtrip 12345 b16", from_base(to_base(12345, 16), 16), 12345)
+    bad = bad + expect_i("roundtrip 987654 b12", from_base(to_base(987654, 12), 12), 987654)
+    bad = bad + expect_i("digit_val a", digit_val("a"), 10)
+    bad = bad + expect_i("digit_val Z", digit_val("Z"), 35)
+    bad = bad + expect_i("digit_val !", digit_val("!"), -1)
+
+    # ---- trig / logs ----
+    bad = bad + expect_f("sin 0", sin(0.0), 0.0)
+    bad = bad + expect_f("sin pi/2", sin(PI / 2.0), 1.0)
+    bad = bad + expect_f("sin pi", sin(PI), 0.0)
+    bad = bad + expect_f("sin pi/6", sin(PI / 6.0), 0.5)
+    bad = bad + expect_f("sin pi/4", sin(PI / 4.0), 0.7071067811865475)
+    bad = bad + expect_f("sin pi/3", sin(PI / 3.0), 0.8660254037844386)
+    bad = bad + expect_f("sin -pi/2", sin(0.0 - PI / 2.0), -1.0)
+    bad = bad + expect_f("sin 13pi/6", sin(PI * 13.0 / 6.0), 0.5)
+    bad = bad + expect_f("cos 0", cos(0.0), 1.0)
+    bad = bad + expect_f("cos pi/3", cos(PI / 3.0), 0.5)
+    bad = bad + expect_f("cos pi", cos(PI), -1.0)
+    bad = bad + expect_f("tan pi/4", tan(PI / 4.0), 1.0)
+    bad = bad + expect_f("atan 1", atan(1.0), 0.7853981633974483)
+    bad = bad + expect_f("atan 0.5", atan(0.5), 0.4636476090008061)
+    bad = bad + expect_f("atan 2", atan(2.0), 1.1071487177940904)
+    bad = bad + expect_f("atan -3", atan(-3.0), -1.2490457723982544)
+    bad = bad + expect_f("exp 0", exp(0.0), 1.0)
+    bad = bad + expect_f("exp 1", exp(1.0), 2.718281828459045)
+    bad = bad + expect_f("exp -1", exp(-1.0), 0.36787944117144233)
+    bad = bad + expect_f("exp 10", exp(10.0), 22026.465794806718)
+    bad = bad + expect_f("exp 0.5", exp(0.5), 1.6487212707001282)
+    bad = bad + expect_f("exp -20", exp(-20.0), 2.061153622438558e-09)
+    bad = bad + expect_f("ln e", ln(E), 1.0)
+    bad = bad + expect_f("ln 10", ln(10.0), 2.302585092994046)
+    bad = bad + expect_f("ln 0.5", ln(0.5), -0.6931471805599453)
+    bad = bad + expect_f("ln 1000", ln(1000.0), 6.907755278982137)
+    bad = bad + expect_b("ln neg very negative", ln(-1.0) < -1e307, True)
+    bad = bad + expect_f("log10 1000", log10(1000.0), 3.0)
+    bad = bad + expect_f("log10 2", log10(2.0), 0.3010299956639812)
+    bad = bad + expect_f("log2 8", log2(8.0), 3.0)
+    bad = bad + expect_f("log2 10", log2(10.0), 3.321928094887362)
+    bad = bad + expect_f("powf 2 0.5", pow_float(2.0, 0.5), 1.4142135623730951)
+    bad = bad + expect_f("powf 10 3", pow_float(10.0, 3.0), 1000.0)
+    bad = bad + expect_f("powf 2 -2", pow_float(2.0, -2.0), 0.25)
+    bad = bad + expect_f("powf -2 3", pow_float(-2.0, 3.0), -8.0)
+    bad = bad + expect_f("powf -2 0.5", pow_float(-2.0, 0.5), 0.0)
+    bad = bad + expect_f("deg2rad 180", deg2rad(180.0), PI)
+    bad = bad + expect_f("rad2deg pi", rad2deg(PI), 180.0)
+
+    if bad == 0 {
+        print("ALL MATHX TESTS PASSED")
+    } else {
+        print("FAILURES: ", bad)
+        exit(1)
+    }
+}

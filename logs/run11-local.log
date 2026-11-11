@@ -1,0 +1,78 @@
+# mathx 0.5.0 + hashx 0.1.0 end-to-end verify (local registry as source) — 2026-11-11T00:00:31Z
+# catpm 0.5.5, catcc 0.1.8, source dir: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo-reg
+
+\$ catpm init
+catpm: created catpm.json
+  add deps with: catpm add <name>[@spec]
+\$ catpm add mathx
+catpm: added mathx 'latest' to catpm.json (resolves to 0.5.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo-reg)
+catpm: resolved 2 package(s):
+  - mathx@0.5.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch mathx@0.5.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo-reg/mathx/mathx-0.5.0.cpkg
+  prefetch stringx@0.3.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo-reg/stringx/stringx-0.3.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.5.0.cpkg
+  installed mathx@0.5.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+\$ catpm add hashx
+catpm: added hashx 'latest' to catpm.json (resolves to 0.1.0)
+catpm: resolving dependencies (source: /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo-reg)
+catpm: resolved 3 package(s):
+  - mathx@0.5.0
+  - hashx@0.1.0
+  - stringx@0.3.0
+catpm: installing into ./deps/
+  prefetch hashx@0.1.0 <- /root/.hermes-web-ui/.ekko/workspace/default/person-main-f5f99dc5-b73a-417a-baf6-5b3f41382e6c/repo-reg/hashx/hashx-0.1.0.cpkg
+  cached .catpm-cache/mathx/mathx-0.5.0.cpkg
+  installed mathx@0.5.0 (sha256 ok) -> deps/mathx/index.catc
+  cached .catpm-cache/hashx/hashx-0.1.0.cpkg
+  installed hashx@0.1.0 (sha256 ok) -> deps/hashx/index.catc
+  cached .catpm-cache/stringx/stringx-0.3.0.cpkg
+  installed stringx@0.3.0 (sha256 ok) -> deps/stringx/index.catc
+catpm: wrote catpm.lock
+exit=0
+
+\$ cat catpm.lock
+# catpm lock file v2 (generated, do not edit)
+# format: name version
+mathx 0.5.0
+hashx 0.1.0
+stringx 0.3.0
+
+\$ catcc demo.cat -o demo && ./demo
+Compiling demo.cat...
+failed to read file: open /tmp/libwork/verify/proj/demo.cat: no such file or directory
+\$ catcc demo.cat -o demo && ./demo
+Invoking CatBase bin compiler...
+Compilation successful.
+== mathx 0.5.0 ==
+fib(10) = 55
+comb(52,5) = 2598960
+gcd/lcm 12,18 = 6 36
+is_prime(97) = True
+prime_factors(360) = 2 2 2 3 3 5 
+isqrt(17) = 4
+sqrt(2) = 1.414213562373095
+sin(pi/6) = 0.5
+atan(1) = 0.785398163397448
+exp(1) = 2.718281828459045
+ln(e) = 1
+to_base(255,16) = ff
+from_base('ff',16) = 255
+mean = 5
+stddev = 2
+totient(36) = 12
+loud_double(21) = 42!
+== hashx 0.1.0 ==
+crc32('abc') = 891568578
+crc32_hex('abc') = 352441c2
+adler32('Wikipedia') = 300286872
+djb2('hello') = 261238937
+sdbm('hello') = 684824882
+fnv1a32('hello') = 1335831723
+exit=0

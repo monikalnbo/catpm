@@ -1,0 +1,315 @@
+# hashx 0.1.0 — non-cryptographic hashes and checksums for CatBase 0.1.8
+# CatBase v0.1.8 has no bitwise operators, so every xor/shift below is
+# emulated in arithmetic on values kept in [0, 2^32): xor via per-bit
+# comparison, shifts via *2^k / 2^k, and as unsigned via the modulo of
+# the same name. All i64 intermediates stay far below 2^63.
+# Every algorithm is checked byte-for-byte against published test
+# vectors (empty string, "abc", "123456789", "Wikipedia", ...).
+HASHX_VERSION: str = "0.1.0"
+
+MOD32: int = 4294967296
+
+def xor32(a: int, b: int) -> int {
+    # bitwise xor of two values in [0, 2^32), done one bit at a time
+    r: int = 0
+    p: int = 1
+    x: int = a
+    y: int = b
+    i: int = 0
+    while i < 32 {
+        ba: int = x % 2
+        bb: int = y % 2
+        if ba != bb {
+            r = r + p
+        }
+        x = x / 2
+        y = y / 2
+        p = p * 2
+        i = i + 1
+    }
+    return r
+}
+
+def mask32(x: int) -> int {
+    return x % MOD32
+}
+
+# ============ CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320) ============
+
+CRC_TABLE: list[int] = []
+
+def crc_build_table() -> list[int] {
+    table: list[int] = []
+    i: int = 0
+    while i < 256 {
+        c: int = i
+        j: int = 0
+        while j < 8 {
+            if c % 2 == 1 {
+                c = xor32(c / 2, 3988292384)
+            } else {
+                c = c / 2
+            }
+            j = j + 1
+        }
+        table.append(c)
+        i = i + 1
+    }
+    return table
+}
+
+def crc32(s: str) -> int {
+    if len(CRC_TABLE) == 0 {
+        CRC_TABLE = crc_build_table()
+    }
+    crc: int = 4294967295
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        b: int = ord(s[i:i+1])
+        idx: int = xor32(crc % 256, b)
+        crc = xor32(crc / 256, CRC_TABLE[idx])
+        i = i + 1
+    }
+    return xor32(crc, 4294967295)
+}
+
+# ============ Adler-32 ============
+
+def adler32(s: str) -> int {
+    MODA: int = 65521
+    a: int = 1
+    b: int = 0
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        c: int = ord(s[i:i+1])
+        a = a + c
+        if a >= MODA {
+            a = a - MODA
+        }
+        b = b + a
+        if b >= MODA {
+            b = b - MODA
+        }
+        i = i + 1
+    }
+    return b * 65536 + a
+}
+
+# ============ djb2 (Bernstein) ============
+
+def djb2(s: str) -> int {
+    h: int = 5381
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = mask32(h * 33 + ord(s[i:i+1]))
+        i = i + 1
+    }
+    return h
+}
+
+def djb2_xor(s: str) -> int {
+    # djb2 variant h*33 ^ c
+    h: int = 5381
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = xor32(mask32(h * 33), ord(s[i:i+1]))
+        i = i + 1
+    }
+    return h
+}
+
+# ============ sdbm ============
+
+def sdbm(s: str) -> int {
+    # h = c + h*2^6 + h*2^16 - h = c + h*65599
+    h: int = 0
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = mask32(ord(s[i:i+1]) + h * 65599)
+        i = i + 1
+    }
+    return h
+}
+
+# ============ FNV-1a / FNV-1 (32-bit) ============
+
+def fnv1a32(s: str) -> int {
+    h: int = 2166136261
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = xor32(h, ord(s[i:i+1]))
+        h = mask32(h * 16777619)
+        i = i + 1
+    }
+    return h
+}
+
+def fnv1_32(s: str) -> int {
+    # FNV-1 (multiply then xor), kept for completeness
+    h: int = 2166136261
+    n: int = len(s)
+    i: int = 0
+    while i < n {
+        h = mask32(h * 16777619)
+        h = xor32(h, ord(s[i:i+1]))
+        i = i + 1
+    }
+    return h
+}
+
+# ============ hex output ============
+
+def to_hex32(v: int) -> str {
+    # fixed-width 8 lowercase hex digits (input assumed in [0, 2^32))
+    digits: str = "0123456789abcdef"
+    out: str = ""
+    x: int = v
+    i: int = 0
+    while i < 8 {
+        out = digits[x % 16:x % 16 + 1] + out
+        x = x / 16
+        i = i + 1
+    }
+    return out
+}
+
+def crc32_hex(s: str) -> str {
+    return to_hex32(crc32(s))
+}
+
+def adler32_hex(s: str) -> str {
+    return to_hex32(adler32(s))
+}
+
+# ============ scope notes (honest limits) ============
+# - 64-bit variants (FNV-1a 64, xxHash64, ...) are NOT provided: the
+#   64-bit FNV offset basis 0xcbf29ce484222325 itself exceeds the i64
+#   max 2^63-1, and h*prime products overflow i64; CatBase v0.1.8 has
+#   no u64 type and no multiplication that wraps at 2^64.
+# - md5/sha1: rotations and xor emulation are arithmetically possible
+#   (verified in probes), but the step counts (64x16 / 80 rounds) make
+#   a byte-exact pure-arithmetic implementation a large, slow surface
+#   with no security value (both are broken as cryptographic hashes).
+#   Not included; documented instead.
+# - sha256: catpm itself shells out to sha256sum for package integrity
+#   (PROTOCOL.md 3.2) — that division of labor stays with the system
+#   tool by design.
+
+# ============ test harness ============
+
+def expect_i(label: str, got: int, want: int) -> int {
+    if got != want {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+def expect_s(label: str, got: str, want: str) -> int {
+    if got != want {
+        print("FAIL ", label, " got=", got, " want=", want)
+        return 1
+    }
+    return 0
+}
+
+FOX: str = "The quick brown fox jumps over the lazy dog"
+
+def main(args: list[str]) {
+    bad: int = 0
+
+    # ---- xor32 emulator sanity ----
+    bad = bad + expect_i("xor32 5^3", xor32(5, 3), 6)
+    bad = bad + expect_i("xor32 0^0", xor32(0, 0), 0)
+    bad = bad + expect_i("xor32 all^0", xor32(4294967295, 0), 4294967295)
+    bad = bad + expect_i("xor32 a^a", xor32(891568578, 891568578), 0)
+
+    # ---- crc32: published vectors ----
+    bad = bad + expect_i("crc32 empty", crc32(""), 0)
+    bad = bad + expect_i("crc32 abc", crc32("abc"), 891568578)
+    bad = bad + expect_i("crc32 hello", crc32("hello"), 907060870)
+    bad = bad + expect_i("crc32 123456789", crc32("123456789"), 3421780262)
+    bad = bad + expect_i("crc32 Wikipedia", crc32("Wikipedia"), 2913648686)
+    bad = bad + expect_i("crc32 fox", crc32(FOX), 1095738169)
+    bad = bad + expect_i("crc32 a", crc32("a"), 3904355907)
+    bad = bad + expect_i("crc32 digits10", crc32("0123456789"), 2793719750)
+
+    # ---- adler32: published vectors ----
+    bad = bad + expect_i("adler32 empty", adler32(""), 1)
+    bad = bad + expect_i("adler32 abc", adler32("abc"), 38600999)
+    bad = bad + expect_i("adler32 hello", adler32("hello"), 103547413)
+    bad = bad + expect_i("adler32 123456789", adler32("123456789"), 152961502)
+    bad = bad + expect_i("adler32 Wikipedia", adler32("Wikipedia"), 300286872)
+    bad = bad + expect_i("adler32 fox", adler32(FOX), 1541148634)
+    bad = bad + expect_i("adler32 a", adler32("a"), 6422626)
+    bad = bad + expect_i("adler32 digits10", adler32("0123456789"), 184484366)
+
+    # ---- djb2 ----
+    bad = bad + expect_i("djb2 empty", djb2(""), 5381)
+    bad = bad + expect_i("djb2 abc", djb2("abc"), 193485963)
+    bad = bad + expect_i("djb2 hello", djb2("hello"), 261238937)
+    bad = bad + expect_i("djb2 123456789", djb2("123456789"), 902675330)
+    bad = bad + expect_i("djb2 Wikipedia", djb2("Wikipedia"), 2567971580)
+    bad = bad + expect_i("djb2 fox", djb2(FOX), 885799134)
+    bad = bad + expect_i("djb2 a", djb2("a"), 177670)
+    bad = bad + expect_i("djb2 digits10", djb2("0123456789"), 995771986)
+
+    # ---- djb2 xor variant ----
+    bad = bad + expect_i("djb2x empty", djb2_xor(""), 5381)
+    bad = bad + expect_i("djb2x abc", djb2_xor("abc"), 193409669)
+    bad = bad + expect_i("djb2x hello", djb2_xor("hello"), 178056679)
+    bad = bad + expect_i("djb2x 123456789", djb2_xor("123456789"), 1001122324)
+    bad = bad + expect_i("djb2x Wikipedia", djb2_xor("Wikipedia"), 3917604896)
+    bad = bad + expect_i("djb2x fox", djb2_xor(FOX), 3061430282)
+    bad = bad + expect_i("djb2x a", djb2_xor("a"), 177604)
+    bad = bad + expect_i("djb2x digits10", djb2_xor("0123456789"), 3765181572)
+
+    # ---- sdbm ----
+    bad = bad + expect_i("sdbm empty", sdbm(""), 0)
+    bad = bad + expect_i("sdbm abc", sdbm("abc"), 807794786)
+    bad = bad + expect_i("sdbm hello", sdbm("hello"), 684824882)
+    bad = bad + expect_i("sdbm 123456789", sdbm("123456789"), 1755344949)
+    bad = bad + expect_i("sdbm Wikipedia", sdbm("Wikipedia"), 2154307799)
+    bad = bad + expect_i("sdbm fox", sdbm(FOX), 2359783795)
+    bad = bad + expect_i("sdbm a", sdbm("a"), 97)
+    bad = bad + expect_i("sdbm digits10", sdbm("0123456789"), 2833570821)
+
+    # ---- fnv1a32 ----
+    bad = bad + expect_i("fnv1a32 empty", fnv1a32(""), 2166136261)
+    bad = bad + expect_i("fnv1a32 abc", fnv1a32("abc"), 440920331)
+    bad = bad + expect_i("fnv1a32 hello", fnv1a32("hello"), 1335831723)
+    bad = bad + expect_i("fnv1a32 123456789", fnv1a32("123456789"), 3146166556)
+    bad = bad + expect_i("fnv1a32 Wikipedia", fnv1a32("Wikipedia"), 2717113616)
+    bad = bad + expect_i("fnv1a32 fox", fnv1a32(FOX), 76545936)
+    bad = bad + expect_i("fnv1a32 a", fnv1a32("a"), 3826002220)
+    bad = bad + expect_i("fnv1a32 digits10", fnv1a32("0123456789"), 4185952242)
+
+    # ---- fnv1_32 ----
+    bad = bad + expect_i("fnv1_32 empty", fnv1_32(""), 2166136261)
+    bad = bad + expect_i("fnv1_32 abc", fnv1_32("abc"), 1134309195)
+    bad = bad + expect_i("fnv1_32 hello", fnv1_32("hello"), 3069866343)
+    bad = bad + expect_i("fnv1_32 123456789", fnv1_32("123456789"), 605325334)
+    bad = bad + expect_i("fnv1_32 Wikipedia", fnv1_32("Wikipedia"), 747180650)
+    bad = bad + expect_i("fnv1_32 fox", fnv1_32(FOX), 3922226286)
+    bad = bad + expect_i("fnv1_32 a", fnv1_32("a"), 84696446)
+    bad = bad + expect_i("fnv1_32 digits10", fnv1_32("0123456789"), 1737638188)
+
+    # ---- hex helpers ----
+    bad = bad + expect_s("hex 0", to_hex32(0), "00000000")
+    bad = bad + expect_s("hex max", to_hex32(4294967295), "ffffffff")
+    bad = bad + expect_s("crc32_hex abc", crc32_hex("abc"), "352441c2")
+    bad = bad + expect_s("adler32_hex abc", adler32_hex("abc"), "024d0127")
+
+    if bad == 0 {
+        print("ALL HASHX TESTS PASSED")
+    } else {
+        print("FAILURES: ", bad)
+        exit(1)
+    }
+}
